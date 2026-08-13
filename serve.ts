@@ -22,7 +22,7 @@ import { recordCall, getCallStats } from "./lib/dashboard-log"
 import { scanPlugins, getPlugins, togglePlugin, ensurePluginTables } from "./lib/plugins"
 import { processPlatformMessage, getPlatformConfig, setPlatformConfig, listAdapters, ensurePlatformTables } from "./lib/platform"
 import { fetchMarketplace, installPlugin, uninstallPlugin } from "./lib/marketplace"
-import { verifyToken, generateToken, setToken, getToken, isAuthConfigured } from "./lib/auth"
+import { verifySession, login, logout, listUsers, createUser, deleteUser, changePassword } from "./lib/admin-users"
 import { exportReportHtml, exportKbHtml } from "./lib/export"
 import { batchImport, ensureImportDir } from "./lib/import"
 import { generateApiDocHtml } from "./lib/api-docs"
@@ -149,39 +149,39 @@ const server = createServer(async (req, res) => {
   if (url === "/api/calls") { json(res, getCallStats()); return }
 
   // Auth check
-  function checkAuth(): boolean {
-    if (!isAuthConfigured()) return true // No auth configured = open
+  function checkAuth(): any {
     const auth = req.headers["authorization"] || ""
-    const token = auth.replace(/^Bearer\s+/i, "") || new URL(req.url || "/", "http://x").searchParams.get("token") || ""
-    return verifyToken(token)
+    const token = auth.replace(/^Bearer\s+/i, "") || ""
+    return verifySession(token)
   }
 
   // Auth endpoints (no auth required)
   if (url === "/auth/login" && method === "POST") {
     try {
       const body = JSON.parse(await readBody(req))
-      if (verifyToken(body.token || "")) {
-        json(res, { ok: true, token: body.token, configured: true })
-      } else {
-        json(res, { ok: false, error: "invalid token" }, 401)
-      }
+      const result = login(body.username || "admin", body.password || "")
+      json(res, result)
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
     return
   }
-  if (url === "/auth/status") { json(res, { configured: isAuthConfigured(), hasToken: !!getToken() }); return }
-  if (url === "/auth/setup" && method === "POST" && !isAuthConfigured()) {
-    try {
-      const body = JSON.parse(await readBody(req))
-      const token = body.token || generateToken()
-      setToken(token)
-      json(res, { ok: true, token })
-    } catch (e) { json(res, { error: (e as Error).message }, 400) }
+  if (url === "/auth/logout" && method === "POST") {
+    const auth = req.headers["authorization"] || ""
+    const token = auth.replace(/^Bearer\s+/i, "")
+    logout(token)
+    json(res, { ok: true })
+    return
+  }
+  if (url === "/auth/me") {
+    const user = checkAuth()
+    if (user) json(res, { ok: true, user: { id: user.uuid, username: user.username, role: user.role, display_name: user.display_name } })
+    else json(res, { ok: false }, 401)
     return
   }
 
   // --- Admin API (requires auth) ---
   if (url.startsWith("/admin/")) {
-    if (!checkAuth()) { json(res, { error: "unauthorized" }, 401); return }
+    const user = checkAuth()
+    if (!user) { json(res, { error: "unauthorized" }, 401); return }
     try {
       const action = url.replace("/admin/", "")
       const body = method === "POST" ? JSON.parse(await readBody(req)) : {}
@@ -225,6 +225,11 @@ const server = createServer(async (req, res) => {
         // Import
         case "import": result = batchImport(body.path, body.tags); break
         case "import/dir": result = { path: ensureImportDir() }; break
+        // Users
+        case "users/list": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = listUsers(); break
+        case "users/create": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = createUser(body.username, body.password, body.role || "editor", body.displayName || ""); break
+        case "users/delete": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = { ok: deleteUser(body.uuid) }; break
+        case "users/password": result = changePassword(user.uuid, body.oldPassword, body.newPassword); break
       }
       json(res, result)
     } catch (e) { json(res, { error: (e as Error).message }, 400) }

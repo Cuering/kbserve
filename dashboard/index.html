@@ -99,23 +99,40 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;padding:1
 </main>
 <script>
 const BASE = "";
-let __lang = "zh", activeMainTab = "chat", adminTab = "dashboard", adminToken = "";
+let __lang = "zh", activeMainTab = "chat", adminTab = "dashboard", adminToken = "", adminUser = null;
 
-// Admin auth
 try { adminToken = localStorage.getItem("kbserve_admin_token") || "" } catch {}
+
 async function checkAuth(){
-  if(adminToken) return true;
-  const st = await get("/auth/status");
-  if(!st.configured) return true;
-  const pw = prompt(_l("请输入管理员令牌","Enter admin token"));
-  if(!pw) return false;
-  const r = await post("/auth/login",{token:pw});
-  if(r.ok){ adminToken = r.token; try{localStorage.setItem("kbserve_admin_token",adminToken)}catch{} return true }
-  alert(_l("令牌错误","Invalid token"));
+  if(adminToken){
+    const r = await fetch(BASE+"/auth/me",{headers:{"Authorization":"Bearer "+adminToken}}).then(r=>r.json());
+    if(r.ok){ adminUser = r.user; return true }
+    adminToken = ""; localStorage.removeItem("kbserve_admin_token");
+  }
+  return showLogin();
+}
+function showLogin(){
+  const box = document.getElementById("adminContent");
+  box.innerHTML = `<div class=card style="max-width:400px;margin:40px auto"><h3>${_l("管理员登录","Admin Login")}</h3>
+    <form onsubmit="return doLogin(event)">
+      <input id="loginUser" value="admin" placeholder="${_l("用户名","Username")}">
+      <input id="loginPass" type="password" placeholder="${_l("密码","Password")}">
+      <button class="btn btn-p">${_l("登录","Login")}</button>
+    </form><div id="loginErr" style="color:var(--bad);font-size:12px;margin-top:4px"></div></div>`;
   return false;
 }
-// Wrap fetch to include auth header
-const _origPost = post;
+async function doLogin(e){
+  e.preventDefault();
+  const r = await fetch(BASE+"/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:document.getElementById("loginUser").value,password:document.getElementById("loginPass").value})}).then(r=>r.json());
+  if(r.ok){ adminToken = r.token; adminUser = r.user; localStorage.setItem("kbserve_admin_token",adminToken); renderAdmin(); return false }
+  document.getElementById("loginErr").textContent = r.error || "Login failed";
+  return false;
+}
+async function doLogout(){
+  await fetch(BASE+"/auth/logout",{method:"POST",headers:{"Authorization":"Bearer "+adminToken}}).catch(()=>{});
+  adminToken = ""; adminUser = null; localStorage.removeItem("kbserve_admin_token");
+  showLogin();
+}
 async function post(p,b){
   const headers = {"Content-Type":"application/json"};
   if(adminToken) headers["Authorization"] = "Bearer "+adminToken;
@@ -180,7 +197,7 @@ async function rate(v,btn){
 }
 
 // === Admin ===
-const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",import:"导入|Import",qa:"QA审核|QA Review",feedback:"反馈|Feedback",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports",docs:"API文档|API Docs"};
+const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",import:"导入|Import",qa:"QA审核|QA Review",feedback:"反馈|Feedback",users:"用户|Users",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports",docs:"API文档|API Docs"};
 function switchAdmin(t){
   adminTab=t;renderAdmin();
   document.querySelectorAll("#adminNav button").forEach(b=>b.classList.remove("active"));
@@ -196,6 +213,7 @@ async function renderAdmin(){
     case"import":renderImport(box);break;
     case"qa":renderQa(box);break;
     case"feedback":renderFeedback(box);break;
+    case"users":renderUsers(box);break;
     case"persona":renderPersona(box);break;
     case"provider":renderProvider(box);break;
     case"platform":renderPlatform(box);break;
@@ -294,6 +312,41 @@ async function renderFeedback(box){
     box.innerHTML+=h+`</table></div></div>`;
   }else box.innerHTML+=`<div class=empty>${_l("暂无反馈","No feedback")}</div></div>`;
 }
+async function renderUsers(box){
+  const users=await get("/admin/users/list");
+  let h=`<div class=card><h3>${_l("管理员管理","User Management")}</h3>
+    ${adminUser?.role==="admin"?`
+    <form onsubmit="return addUser(event)" style="margin-bottom:12px">
+      <div class=form-row>
+        <input id="nuName" placeholder="${_l("用户名","Username")}" required>
+        <input id="nuPass" type="password" placeholder="${_l("密码","Password")}" required>
+        <select id="nuRole">
+          <option value="editor">${_l("编辑","Editor")}</option>
+          <option value="admin">${_l("管理员","Admin")}</option>
+          <option value="viewer">${_l("只读","Viewer")}</option>
+        </select>
+        <button class="btn btn-p">${_l("添加","Add")}</button>
+      </div>
+    </form>`:""}
+    <table><tr><th>${_l("用户名","Username")}</th><th>${_l("角色","Role")}</th><th>${_l("显示名","Display")}</th><th>${_l("操作","Actions")}</th></tr>`;
+  if(users&&users.length)for(const u of users){
+    h+=`<tr><td>${esc(u.username)}</td><td>${u.role}</td><td>${esc(u.display_name||"")}</td>
+      <td>${adminUser?.role==="admin"&&u.role!=="admin"?`<button class="btn btn-sm btn-d" onclick="deleteUser('${esc(u.uuid)}')">${_l("删除","Delete")}</button>`:""}</td></tr>`;
+  }
+  h+=`</table></div><div class=card><h3>${_l("当前会话","Current Session")}</h3>
+    <p>${esc(adminUser?.username||"")} (${adminUser?.role||""})</p>
+    <button class="btn" onclick="doLogout()">${_l("退出登录","Logout")}</button>
+    <button class="btn" onclick="document.getElementById('pwForm').style.display='block'" style="margin-left:8px">${_l("修改密码","Change Password")}</button>
+    <form id="pwForm" style="display:none;margin-top:8px" onsubmit="return changePw(event)">
+      <input id="opw" type="password" placeholder="${_l("当前密码","Current password")}" required>
+      <input id="npw" type="password" placeholder="${_l("新密码","New password")}" required>
+      <button class="btn btn-sm btn-p">${_l("确认","Confirm")}</button>
+    </form></div>`;
+  box.innerHTML=h;
+}
+async function addUser(e){e.preventDefault();const r=await post("/admin/users/create",{username:document.getElementById("nuName").value,password:document.getElementById("nuPass").value,role:document.getElementById("nuRole").value});alert(r.error||_l("已添加","Added"));renderAdmin()}
+async function deleteUser(uuid){if(confirm(_l("确定删除？","Delete?"))){await post("/admin/users/delete",{uuid});renderAdmin()}}
+async function changePw(e){e.preventDefault();const r=await post("/admin/users/password",{oldPassword:document.getElementById("opw").value,newPassword:document.getElementById("npw").value});alert(r.error||_l("已修改","Changed"))}
 async function renderPersona(box){
   const p=await get("/admin/persona/get");
   box.innerHTML=`<div class=card><h3>${_l("人设配置","Persona Settings")}</h3>
