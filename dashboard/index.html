@@ -154,7 +154,7 @@ async function rate(v,btn){
 }
 
 // === Admin ===
-const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",qa:"QA审核|QA Review",feedback:"反馈|Feedback",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",reports:"报告|Reports"};
+const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",qa:"QA审核|QA Review",feedback:"反馈|Feedback",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports"};
 function switchAdmin(t){
   adminTab=t;renderAdmin();
   document.querySelectorAll("#adminNav button").forEach(b=>b.classList.remove("active"));
@@ -172,6 +172,8 @@ async function renderAdmin(){
     case"provider":renderProvider(box);break;
     case"platform":renderPlatform(box);break;
     case"plugins":renderPlugins(box);break;
+    case"marketplace":renderMarketplace(box);break;
+    case"export":renderExport(box);break;
     case"reports":renderReports(box);break;
   }
 }
@@ -287,6 +289,54 @@ async function renderPlatform(box){
     </div>`;
   }
   box.innerHTML+=`</div></div>`;
+}
+async function renderMarketplace(box){
+  box.innerHTML=`<div class=card><h3>${_l("插件市场","Plugin Marketplace")}</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">${_l("从远程仓库安装插件。","Install plugins from remote repositories.")}</p>
+    <div><label>${_l("GitHub 仓库","GitHub Repo")}</label>
+    <div class=form-row><input id="mpRepo" value="Cuering/kbserve-plugins" placeholder="owner/repo"><button class="btn btn-p" onclick="installFromMp()">${_l("安装","Install")}</button></div></div>
+    <div id="mpList" style="margin-top:12px">
+      <div class=empty>${_l("点击刷新获取市场列表","Click refresh to load marketplace")}</div>
+    </div>
+    <button class="btn" onclick="refreshMarketplace()" style="margin-top:8px">${_l("刷新市场列表","Refresh Marketplace")}</button>
+  </div>`;
+}
+async function refreshMarketplace(){
+  const box=document.getElementById("mpList");
+  if(!box)return;
+  box.innerHTML=`<div class=empty>${_l("加载中…","Loading…")}</div>`;
+  const r=await get("/admin/marketplace/list");
+  if(r.plugins&&r.plugins.length){
+    let h=`<table><tr><th>${_l("名称","Name")}</th><th>${_l("版本","Ver")}</th><th>${_l("作者","Author")}</th><th>${_l("说明","Description")}</th><th>${_l("操作","Actions")}</th></tr>`;
+    for(const p of r.plugins)h+=`<tr><td>${esc(p.name)}</td><td>${p.version}</td><td>${esc(p.author)}</td><td>${esc(p.description||"").slice(0,40)}</td><td><button class="btn btn-sm btn-p" onclick="installFromMp('${esc(p.repo)}')">${_l("安装","Install")}</button></td></tr>`;
+    box.innerHTML=h+`</table>`;
+  }else box.innerHTML=`<div class=empty>${_l("暂无可用插件","No plugins available")}</div>`;
+}
+async function installFromMp(repo){
+  const r=await post("/admin/marketplace/install",{repo:repo||document.getElementById("mpRepo")?.value});
+  alert(r.message||r.error);
+  if(r.ok)refreshMarketplace();
+}
+async function renderExport(box){
+  box.innerHTML=`<div class=card><h3>${_l("导出","Export")}</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <button class="btn btn-p" onclick="exportReport('all')">${_l("导出汇总报告","Export All Users Report")}</button>
+      <button class="btn" onclick="exportKb()">${_l("导出知识库清单","Export KB Document List")}</button>
+    </div>
+    <div id="exportPreview" style="border:1px solid var(--line);border-radius:8px;padding:12px;max-height:500px;overflow:auto;background:var(--bg)"></div>
+  </div>`;
+}
+async function exportReport(type,userId){
+  const r=await post("/admin/export/report",{type,userId});
+  const box=document.getElementById("exportPreview");
+  if(box)box.innerHTML=r.html||"";
+  if(r.html){const w=window.open();w.document.write(r.html)}
+}
+async function exportKb(){
+  const r=await post("/admin/export/kb",{});
+  const box=document.getElementById("exportPreview");
+  if(box)box.innerHTML=r.html||"";
+  if(r.html){const w=window.open();w.document.write(r.html)}
 }
 async function savePlatform(e,name){e.preventDefault();
   const cfg={};

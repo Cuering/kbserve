@@ -21,6 +21,8 @@ import { generateUserReport, generateAllUsersReport } from "./lib/report"
 import { recordCall, getCallStats } from "./lib/dashboard-log"
 import { scanPlugins, getPlugins, togglePlugin, ensurePluginTables } from "./lib/plugins"
 import { processPlatformMessage, getPlatformConfig, setPlatformConfig, listAdapters, ensurePlatformTables } from "./lib/platform"
+import { fetchMarketplace, installPlugin, uninstallPlugin } from "./lib/marketplace"
+import { exportReportHtml, exportKbHtml } from "./lib/export"
 
 const PORT = Number(process.env.KBSERVE_PORT || 3090)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -178,6 +180,13 @@ const server = createServer(async (req, res) => {
         case "platform/list": result = { adapters: listAdapters() }; break
         case "platform/get": result = { config: getPlatformConfig(body.name || q.get("name") || "webhook") }; break
         case "platform/set": setPlatformConfig(body.name, body.config); result = { ok: true }; break
+        // Marketplace
+        case "marketplace/list": result = { plugins: await fetchMarketplace() }; break
+        case "marketplace/install": result = await installPlugin(body.repo, body.name); break
+        case "marketplace/uninstall": result = uninstallPlugin(body.name); break
+        // Export
+        case "export/report": result = { html: exportReportHtml(body.type || "all", body.userId) }; break
+        case "export/kb": result = { html: exportKbHtml() }; break
       }
       json(res, result)
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
