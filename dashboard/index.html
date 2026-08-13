@@ -410,14 +410,21 @@ async function renderPlatform(box){
         ${name==="telegram"?`
           <div class=form-row><div><label>${_l("Bot Token","Bot Token")}</label><input id="plat-tg-token" value="${esc(cfg.config?.token||"")}"></div></div>
           <div><label>${_l("Webhook URL","Webhook URL")}</label><input id="plat-tg-webhook" value="${esc(cfg.config?.webhookUrl||"")}" placeholder="https://your.domain/webhook/telegram"></div>
+          <div style="margin-top:4px;padding:8px;background:var(--bg);border-radius:6px;font-size:12px"><b>${_l("注册 Webhook","Register Webhook")}:</b><br><code>https://api.telegram.org/bot&lt;TOKEN&gt;/setWebhook?url=https://your.domain/webhook/telegram</code></div>
+        `:name==="wechat"?`
+          <div class=form-row><div><label>AppID</label><input id="plat-wx-appid" value="${esc(cfg.config?.appId||"")}"></div><div><label>${_l("密钥","Secret")}</label><input id="plat-wx-secret" type="password" value="${esc(cfg.config?.secret||"")}"></div></div>
+          <div><label>${_l("Token","Token")}</label><input id="plat-wx-token" value="${esc(cfg.config?.token||"")}"></div>
+          <div style="margin-top:4px;padding:8px;background:var(--bg);border-radius:6px;font-size:12px"><b>${_l("回调地址","Callback URL")}:</b><br><code>https://your.domain/webhook/wechat</code></div>
+        `:name==="feishu"?`
+          <div class=form-row><div><label>App ID</label><input id="plat-fs-id" value="${esc(cfg.config?.appId||"")}"></div><div><label>${_l("密钥","Secret")}</label><input id="plat-fs-secret" type="password" value="${esc(cfg.config?.secret||"")}"></div></div>
+          <div style="margin-top:4px;padding:8px;background:var(--bg);border-radius:6px;font-size:12px"><b>${_l("回调地址","Callback URL")}:</b><br><code>https://your.domain/webhook/feishu</code></div>
+        `:name==="dingtalk"?`
+          <div class=form-row><div><label>AppKey</label><input id="plat-dd-key" value="${esc(cfg.config?.appKey||"")}"></div><div><label>${_l("密钥","Secret")}</label><input id="plat-dd-secret" type="password" value="${esc(cfg.config?.secret||"")}"></div></div>
+          <div style="margin-top:4px;padding:8px;background:var(--bg);border-radius:6px;font-size:12px"><b>${_l("回调地址","Callback URL")}:</b><br><code>https://your.domain/webhook/dingtalk</code></div>
         `:`
           <div class=form-row><div><label>${_l("端点","Endpoint")}</label><input id="plat-wh-url" value="${esc(cfg.config?.url||"")}" placeholder="/webhook"></div></div>`}
         <button class="btn btn-p">${_l("保存","Save")}</button>
       </form>
-      ${name==="telegram"?`<div style="margin-top:8px;padding:8px;background:var(--bg);border-radius:6px;font-size:12px">
-        <b>${_l("设置机器人 Webhook","Set Telegram Bot Webhook")}:</b><br>
-        <code>https://api.telegram.org/bot&lt;TOKEN&gt;/setWebhook?url=https://your.domain/webhook/telegram</code>
-      </div>`:""}
     </div>`;
   }
   box.innerHTML+=`</div></div>`;
@@ -479,6 +486,10 @@ async function exportKb(){
 async function savePlatform(e,name){e.preventDefault();
   const cfg={};
   if(name==="telegram"){cfg.token=document.getElementById("plat-tg-token")?.value;cfg.webhookUrl=document.getElementById("plat-tg-webhook")?.value}
+  if(name==="wechat"){cfg.appId=document.getElementById("plat-wx-appid")?.value;cfg.secret=document.getElementById("plat-wx-secret")?.value;cfg.token=document.getElementById("plat-wx-token")?.value}
+  if(name==="feishu"){cfg.appId=document.getElementById("plat-fs-id")?.value;cfg.secret=document.getElementById("plat-fs-secret")?.value}
+  if(name==="dingtalk"){cfg.appKey=document.getElementById("plat-dd-key")?.value;cfg.secret=document.getElementById("plat-dd-secret")?.value}
+  if(name==="webhook"){cfg.url=document.getElementById("plat-wh-url")?.value}
   await post("/admin/platform/set",{name,config:cfg});
   alert(_l("已保存","Saved"));
 }

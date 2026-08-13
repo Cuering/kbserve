@@ -217,7 +217,15 @@ const server = createServer(async (req, res) => {
         // Platform
         case "platform/list": result = { adapters: listAdapters() }; break
         case "platform/get": result = { config: getPlatformConfig(body.name || q.get("name") || "webhook") }; break
-        case "platform/set": setPlatformConfig(body.name, body.config); result = { ok: true }; break
+        case "platform/set": {
+          setPlatformConfig(body.name, body.config)
+          if (body.name === "telegram" && body.config?.token) require("./lib/platform").configureTelegram(body.config.token, body.config.webhookUrl)
+          if (body.name === "wechat" && body.config?.appId) require("./lib/platform").configWeChat(body.config.appId, body.config.secret, body.config.token)
+          if (body.name === "feishu" && body.config?.appId) require("./lib/platform").configFeishu(body.config.appId, body.config.secret)
+          if (body.name === "dingtalk" && body.config?.appKey) require("./lib/platform").configDingTalk(body.config.appKey, body.config.secret)
+          result = { ok: true }
+          break
+        }
         // Marketplace
         case "marketplace/list": result = { plugins: await fetchMarketplace() }; break
         case "marketplace/install": result = await installPlugin(body.repo, body.name); break
@@ -249,6 +257,58 @@ const server = createServer(async (req, res) => {
         json(res, { reply: reply.content })
       } else json(res, { error: "unparseable" }, 400)
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
+    return
+  }
+
+  // WeChat Official Account webhook (GET=verify, POST=message)
+  if (url === "/webhook/wechat") {
+    // Verification: WeChat sends echostr in GET query
+    if (method === "GET") {
+      const query = new URL(req.url || "/", "http://x").searchParams
+      const echostr = query.get("echostr") || ""
+      res.writeHead(200, { "Content-Type": "text/plain" })
+      res.end(echostr)
+      return
+    }
+    try {
+      const body = JSON.parse(await readBody(req))
+      const msg = require("./lib/platform").getAdapter("wechat")?.parseIncoming(req, body)
+      if (msg) {
+        const reply = await processPlatformMessage(msg)
+        // Reply as WeChat XML
+        const xml = `<xml><ToUserName><![CDATA[${msg.conversationId?.replace("wx-","")||""}]]></ToUserName><FromUserName><![CDATA[kbserve]]></FromUserName><CreateTime>${Math.floor(Date.now()/1000)}</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[${reply.content}]]></Content></xml>`
+        res.writeHead(200, { "Content-Type": "application/xml; charset=utf-8" })
+        res.end(xml)
+      } else { res.writeHead(200); res.end("success") }
+    } catch (e) { res.writeHead(200); res.end("success") }
+    return
+  }
+
+  // Feishu webhook (requires challenge response)
+  if (url === "/webhook/feishu" && method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req))
+      // Feishu URL verification: respond with challenge
+      if (body.challenge) {
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ challenge: body.challenge }))
+        return
+      }
+      const msg = require("./lib/platform").getAdapter("feishu")?.parseIncoming(req, body)
+      if (msg) { await processPlatformMessage(msg) }
+      res.writeHead(200); res.end("{}")
+    } catch (e) { res.writeHead(200); res.end("{}") }
+    return
+  }
+
+  // DingTalk webhook
+  if (url === "/webhook/dingtalk" && method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req))
+      const msg = require("./lib/platform").getAdapter("dingtalk")?.parseIncoming(req, body)
+      if (msg) { await processPlatformMessage(msg) }
+      res.writeHead(200); res.end("{}")
+    } catch (e) { res.writeHead(200); res.end("{}") }
     return
   }
 
