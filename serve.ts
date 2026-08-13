@@ -24,6 +24,8 @@ import { processPlatformMessage, getPlatformConfig, setPlatformConfig, listAdapt
 import { fetchMarketplace, installPlugin, uninstallPlugin } from "./lib/marketplace"
 import { verifyToken, generateToken, setToken, getToken, isAuthConfigured } from "./lib/auth"
 import { exportReportHtml, exportKbHtml } from "./lib/export"
+import { batchImport, ensureImportDir } from "./lib/import"
+import { generateApiDocHtml } from "./lib/api-docs"
 
 const PORT = Number(process.env.KBSERVE_PORT || 3090)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -220,6 +222,9 @@ const server = createServer(async (req, res) => {
         // Export
         case "export/report": result = { html: exportReportHtml(body.type || "all", body.userId) }; break
         case "export/kb": result = { html: exportKbHtml() }; break
+        // Import
+        case "import": result = batchImport(body.path, body.tags); break
+        case "import/dir": result = { path: ensureImportDir() }; break
       }
       json(res, result)
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
@@ -249,6 +254,13 @@ const server = createServer(async (req, res) => {
         json(res, { ok: true })
       } else json(res, { ok: true }) // Telegram expects 200 even for non-text
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
+    return
+  }
+
+  // API docs
+  if (url === "/api-docs") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(generateApiDocHtml(`http://127.0.0.1:${PORT}`))
     return
   }
 

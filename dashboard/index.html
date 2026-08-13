@@ -180,7 +180,7 @@ async function rate(v,btn){
 }
 
 // === Admin ===
-const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",qa:"QA审核|QA Review",feedback:"反馈|Feedback",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports"};
+const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",import:"导入|Import",qa:"QA审核|QA Review",feedback:"反馈|Feedback",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports",docs:"API文档|API Docs"};
 function switchAdmin(t){
   adminTab=t;renderAdmin();
   document.querySelectorAll("#adminNav button").forEach(b=>b.classList.remove("active"));
@@ -193,6 +193,7 @@ async function renderAdmin(){
   switch(adminTab){
     case"dashboard":renderDash(box);break;
     case"kb":renderKb(box);break;
+    case"import":renderImport(box);break;
     case"qa":renderQa(box);break;
     case"feedback":renderFeedback(box);break;
     case"persona":renderPersona(box);break;
@@ -201,6 +202,7 @@ async function renderAdmin(){
     case"plugins":renderPlugins(box);break;
     case"marketplace":renderMarketplace(box);break;
     case"export":renderExport(box);break;
+    case"docs":renderDocs(box);break;
     case"reports":renderReports(box);break;
   }
 }
@@ -219,6 +221,34 @@ async function renderDash(box){
     <div style="font-size:12px;color:var(--dim)"><span id="sysInfo"></span></div>
   </div>`;
   try{const h=await get("/health");document.getElementById("sysInfo").innerHTML=_l(`PID: ${h.pid} · 插件: ${h.plugins||0} 个`,"PID: "+h.pid+" · Plugins: "+(h.plugins||0))}catch{}
+}
+async function renderImport(box){
+  const dir=await get("/admin/import/dir");
+  box.innerHTML=`<div class=card><h3>${_l("批量导入","Batch Import")}</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">
+    ${_l("支持的文件格式: .md (Markdown)、.txt、.csv (第一列标题,第二列内容)、.pdf (需安装 pdftotext)","Supported: .md, .txt, .csv, .pdf (requires pdftotext)")}
+    </p>
+    <div class=meta>${_l("导入目录","Import dir")}: <code>${esc(dir.path||"")}</code></div>
+    <p style="font-size:12px;color:var(--dim);margin-top:8px">${_l("将文件放入上述目录，然后点击「执行导入」。","Place files in the directory above, then click 'Import'.")}</p>
+    <div class=form-row style="margin-top:8px">
+      <input id="importTags" placeholder="${_l("标签","Tags")}">
+      <button class="btn btn-p" onclick="runImport()">${_l("执行导入","Import")}</button>
+    </div>
+    <div id="importResult" style="margin-top:8px"></div>
+  </div>`;
+}
+async function runImport(){
+  const box=document.getElementById("importResult");
+  box.innerHTML=`<div class=empty>${_l("导入中…","Importing…")}</div>`;
+  const r=await post("/admin/import",{tags:document.getElementById("importTags")?.value||""});
+  let h=`<div class=meta>${_l("总计","Total")}: ${r.total} | ${_l("成功","OK")}: ${r.succeeded} | ${_l("失败","Failed")}: ${r.failed}</div>`;
+  if(r.docs&&r.docs.length){
+    h+=`<table><tr><th>${_l("文件","File")}</th><th>${_l("状态","Status")}</th></tr>`;
+    for(const d of r.docs.slice(0,20))h+=`<tr><td>${esc(d.title)}</td><td>${esc(d.status)}</td></tr>`;
+    if(r.docs.length>20)h+=`<tr><td colspan=2><span class=meta>... ${r.docs.length-20} ${_l("更多","more")}</span></td></tr>`;
+    h+=`</table>`;
+  }
+  box.innerHTML=h;
 }
 async function renderKb(box){
   const docs=await get("/admin/kb/list");
@@ -343,6 +373,12 @@ async function installFromMp(repo){
   const r=await post("/admin/marketplace/install",{repo:repo||document.getElementById("mpRepo")?.value});
   alert(r.message||r.error);
   if(r.ok)refreshMarketplace();
+}
+async function renderDocs(box){
+  box.innerHTML=`<div class=card><h3>${_l("API 文档","API Documentation")}</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">${_l("完整的 API 接口文档，按 OpenAPI 3.0 规范生成。","OpenAPI 3.0 specification.")}</p>
+    <iframe src="/api-docs" style="width:100%;height:600px;border:1px solid var(--line);border-radius:8px;background:var(--panel)"></iframe>
+  </div>`;
 }
 async function renderExport(box){
   box.innerHTML=`<div class=card><h3>${_l("导出","Export")}</h3>
