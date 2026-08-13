@@ -20,6 +20,7 @@ import { kbSearch, kbAdd, kbList, kbUpdate, kbDelete, kbAddQaPair, kbApproveQa, 
 import { generateUserReport, generateAllUsersReport } from "./lib/report"
 import { recordCall, getCallStats } from "./lib/dashboard-log"
 import { scanPlugins, getPlugins, togglePlugin, ensurePluginTables } from "./lib/plugins"
+import { processPlatformMessage, getPlatformConfig, setPlatformConfig, listAdapters, ensurePlatformTables } from "./lib/platform"
 
 const PORT = Number(process.env.KBSERVE_PORT || 3090)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -173,8 +174,38 @@ const server = createServer(async (req, res) => {
         // Plugins
         case "plugins/list": result = { plugins: getPlugins().map((p) => ({ name: p.meta.name, enabled: p.enabled, version: p.meta.version, author: p.meta.author, desc: p.meta.desc, astrbot_compat: p.meta.astrbot_compat })) }; break
         case "plugins/toggle": { const r = togglePlugin(body.name); result = r ? { ok: true, name: r.meta.name, enabled: r.enabled } : { error: "not found" }; break }
+        // Platform
+        case "platform/list": result = { adapters: listAdapters() }; break
+        case "platform/get": result = { config: getPlatformConfig(body.name || q.get("name") || "webhook") }; break
+        case "platform/set": setPlatformConfig(body.name, body.config); result = { ok: true }; break
       }
       json(res, result)
+    } catch (e) { json(res, { error: (e as Error).message }, 400) }
+    return
+  }
+
+  // Platform webhook endpoint
+  if (url === "/webhook" && method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req))
+      const msg = require("./lib/platform").getAdapter("webhook")?.parseIncoming(req, body)
+      if (msg) {
+        const reply = await processPlatformMessage(msg)
+        json(res, { reply: reply.content })
+      } else json(res, { error: "unparseable" }, 400)
+    } catch (e) { json(res, { error: (e as Error).message }, 400) }
+    return
+  }
+
+  // Telegram webhook receiver
+  if (url === "/webhook/telegram" && method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req))
+      const msg = require("./lib/platform").getAdapter("telegram")?.parseIncoming(req, body)
+      if (msg) {
+        await processPlatformMessage(msg) // reply sent via sendReply
+        json(res, { ok: true })
+      } else json(res, { ok: true }) // Telegram expects 200 even for non-text
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
     return
   }
@@ -192,8 +223,11 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   ensurePluginTables()
+  ensurePlatformTables()
   const loaded = getPlugins()
+  const adapters = listAdapters()
   console.log(`kbserve: http://127.0.0.1:${PORT}  (QA / KB / Admin / OpenAI / Plugins)`)
   console.log(`  plugins: ${loaded.length} (${loaded.filter((p) => p.enabled).length} enabled)`)
+  console.log(`  platforms: ${adapters.join(", ")}`)
   if (loaded.length) for (const p of loaded) console.log(`    ${p.meta.name} v${p.meta.version}${p.enabled ? "" : " [disabled]"}${p.meta.astrbot_compat ? " (AstrBot)" : ""}`)
 })
