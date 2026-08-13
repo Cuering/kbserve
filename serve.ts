@@ -325,6 +325,20 @@ const server = createServer(async (req, res) => {
     return
   }
 
+  // MCP endpoint (HTTP transport, JSON-RPC 2.0)
+  if (url === "/mcp" && method === "POST") {
+    try {
+      const raw = await readBody(req)
+      if (isMcpRequest(raw)) {
+        const result = await handleMcpRequest(raw)
+        if (result === null) { res.writeHead(202); res.end(); return }
+        res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" })
+        res.end(JSON.stringify(result))
+        return
+      }
+    } catch (e) { /* fall through to regular handling */ }
+  }
+
   // WebSocket / SSE endpoint for real-time notifications
   if (url === "/ws" || url === "/events") {
     if (url === "/ws" && typeof Bun !== "undefined") {
