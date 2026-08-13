@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  kbserve:
+    build: .
+    container_name: kbserve
+    restart: always
+    ports:
+      - "3090:3090"
+    environment:
+      - KBSERVE_PORT=3090
+      - EVOLVE_HOME=/data
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
