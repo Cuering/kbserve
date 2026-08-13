@@ -219,7 +219,7 @@ async function rate(v,btn){
 }
 
 // === Admin ===
-const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",import:"导入|Import",qa:"QA审核|QA Review",feedback:"反馈|Feedback",users:"用户|Users",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports",docs:"API文档|API Docs"};
+const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",import:"导入|Import",qa:"QA审核|QA Review",feedback:"反馈|Feedback",users:"用户|Users",sandbox:"沙箱|Sandbox",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports",docs:"API文档|API Docs"};
 function switchAdmin(t){
   adminTab=t;renderAdmin();
   document.querySelectorAll("#adminNav button").forEach(b=>b.classList.remove("active"));
@@ -236,6 +236,7 @@ async function renderAdmin(){
     case"qa":renderQa(box);break;
     case"feedback":renderFeedback(box);break;
     case"users":renderUsers(box);break;
+    case"sandbox":renderSandbox(box);break;
     case"persona":renderPersona(box);break;
     case"provider":renderProvider(box);break;
     case"platform":renderPlatform(box);break;
@@ -369,6 +370,47 @@ async function renderUsers(box){
 async function addUser(e){e.preventDefault();const r=await post("/admin/users/create",{username:document.getElementById("nuName").value,password:document.getElementById("nuPass").value,role:document.getElementById("nuRole").value});alert(r.error||_l("已添加","Added"));renderAdmin()}
 async function deleteUser(uuid){if(confirm(_l("确定删除？","Delete?"))){await post("/admin/users/delete",{uuid});renderAdmin()}}
 async function changePw(e){e.preventDefault();const r=await post("/admin/users/password",{oldPassword:document.getElementById("opw").value,newPassword:document.getElementById("npw").value});alert(r.error||_l("已修改","Changed"))}
+async function renderSandbox(box){
+  box.innerHTML=`<div class=card><h3>${_l("代码沙箱","Code Sandbox")}</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">
+      ${_l("安全执行 LLM 生成的 JavaScript。沙箱内无 process/require/fs 访问，默认禁联网，超时自动终止。","Safely run LLM-generated JavaScript. No process/require/fs access, network off by default, timeout enforced.")}
+    </p>
+    <div class=form-row>
+      <button class="btn btn-p" onclick="sbRun()">${_l("运行","Run")}</button>
+      <button class="btn" onclick="sbSample()">${_l("示例","Sample")}</button>
+    </div>
+    <div class=form-row style="margin-top:8px">
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="sbNet"> ${_l("允许网络","Allow network")}</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:12px">${_l("超时ms","Timeout ms")}<input type="number" id="sbTimeout" value="5000" style="width:90px"></label>
+    </div>
+    <div><textarea id="sbCode" rows=8 style="font-family:monospace" placeholder="${_l("在此输入 JavaScript…","Enter JS here…")}"></textarea></div>
+    <div id="sbOut" style="margin-top:8px;padding:10px;background:var(--bg);border-radius:6px;font-family:monospace;font-size:12px;white-space:pre-wrap;max-height:300px;overflow:auto"></div>
+  </div>`;
+}
+function sbSample(){
+  const code = `// 沙箱示例：计算并调用 kbserve 全局
+const items = [3, 7, 1, 9, 4];
+const sum = items.reduce((a,b) => a+b, 0);
+console.log("sum =", sum);
+console.log("args.question =", __args && __args.question);
+return { sum, count: items.length, random: Math.round(Math.random()*100) };`;
+  document.getElementById("sbCode").value = code;
+}
+async function sbRun(){
+  const code = document.getElementById("sbCode").value;
+  if (!code) return;
+  const out = document.getElementById("sbOut");
+  out.textContent = _l("运行中…","Running…");
+  const timeout = Number(document.getElementById("sbTimeout").value) || 5000;
+  const allowNet = document.getElementById("sbNet").checked;
+  const r = await post("/admin/sandbox/run", { code, timeout, allowNetworking: allowNet });
+  let h = r.ok ? _l("✓ 成功","✓ OK") : _l("✗ 失败","✗ Failed");
+  h += ` (${r.durationMs}ms)\n\n`;
+  if (r.output) h += r.output + "\n\n";
+  if (r.result !== undefined && r.result !== null) h += _l("返回值:","Result: ") + r.result + "\n";
+  if (r.error) h += _l("错误:","Error: ") + r.error;
+  out.textContent = h;
+}
 async function renderPersona(box){
   const p=await get("/admin/persona/get");
   box.innerHTML=`<div class=card><h3>${_l("人设配置","Persona Settings")}</h3>

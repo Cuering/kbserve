@@ -26,6 +26,9 @@ import { verifySession, login, logout, listUsers, createUser, deleteUser, change
 import { exportReportHtml, exportKbHtml } from "./lib/export"
 import { batchImport, ensureImportDir } from "./lib/import"
 import { generateApiDocHtml } from "./lib/api-docs"
+import { broadcast, sseHandler } from "./lib/websocket"
+import { handleMcpRequest, isMcpRequest } from "./lib/mcp"
+import { sandboxRun, logSandboxRun, ensureSandboxTables } from "./lib/sandbox"
 
 const PORT = Number(process.env.KBSERVE_PORT || 3090)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -241,6 +244,14 @@ const server = createServer(async (req, res) => {
         case "users/create": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = createUser(body.username, body.password, body.role || "editor", body.displayName || ""); break
         case "users/delete": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = { ok: deleteUser(body.uuid) }; break
         case "users/password": result = changePassword(user.uuid, body.oldPassword, body.newPassword); break
+        // Sandbox
+        case "sandbox/run": {
+          ensureSandboxTables()
+          const sr = sandboxRun(body.code || "", { timeout: body.timeout || 5000, allowNetworking: !!body.allowNetworking }, body.args)
+          logSandboxRun({ session: body.session || "manual", result: sr })
+          result = sr
+          break
+        }
       }
       json(res, result)
     } catch (e) { json(res, { error: (e as Error).message }, 400) }

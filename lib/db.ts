@@ -373,6 +373,12 @@ export function initDb(): Database {
       id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE,
       user_id TEXT, type TEXT DEFAULT 'profile', content TEXT, created_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS sandbox_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uuid TEXT UNIQUE, session_id TEXT,
+      ok INTEGER DEFAULT 0, duration_ms INTEGER DEFAULT 0,
+      output TEXT, result TEXT, error TEXT, created_at TEXT
+    );
   `)
   return db
 }
