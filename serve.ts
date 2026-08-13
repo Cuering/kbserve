@@ -118,6 +118,9 @@ const server = createServer(async (req, res) => {
     try {
       const body = JSON.parse(await readBody(req))
       const fb = feedbackAdd(body.question, body.answer, body.rating || 0, body.comment || "", body.userId, body.conversationId)
+      if (body.rating && body.rating <= 2) {
+        broadcast({ type: "feedback", title: "新差评反馈", message: `评分 ${body.rating}/5: ${(body.question || "").slice(0, 60)}`, timestamp: "", meta: { question: body.question, rating: body.rating } })
+      }
       json(res, { ok: true, id: fb.id })
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
     return
@@ -259,6 +262,18 @@ const server = createServer(async (req, res) => {
         json(res, { ok: true })
       } else json(res, { ok: true }) // Telegram expects 200 even for non-text
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
+    return
+  }
+
+  // WebSocket / SSE endpoint for real-time notifications
+  if (url === "/ws" || url === "/events") {
+    if (url === "/ws" && typeof Bun !== "undefined") {
+      const { upgradeToWs } = require("./lib/websocket")
+      const upgraded = upgradeToWs(req as any)
+      if (upgraded) return
+    }
+    // Fallback: Server-Sent Events
+    sseHandler(req, res)
     return
   }
 

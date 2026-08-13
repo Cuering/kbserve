@@ -143,6 +143,28 @@ async function get(p){
   if(adminToken) headers["Authorization"] = "Bearer "+adminToken;
   return (await fetch(BASE+p,{headers})).json();
 }
+
+// Real-time notifications via SSE
+let notifCount = 0;
+function connectSSE(){
+  const evtSource = new EventSource(BASE+"/events");
+  evtSource.onmessage = (e) => {
+    try{
+      const data = JSON.parse(e.data);
+      if(data.type === "feedback"){
+        notifCount++;
+        updateNotifBadge();
+        if(confirm(`[${_l("新反馈","New Feedback")}] ${data.message}\n${_l("查看？","View?")}`)) switchAdmin("feedback");
+      }
+    }catch{}
+  };
+  evtSource.onerror = () => setTimeout(connectSSE, 5000);
+}
+function updateNotifBadge(){
+  const btn = document.querySelector('[data-tab="feedback"]');
+  if(btn) btn.innerHTML = (__lang==="zh"?"反馈":"Feedback") + (notifCount ? ` (${notifCount})` : "");
+}
+setTimeout(connectSSE, 1000);
 try { __lang = localStorage.getItem("kbserve_lang") || (navigator.language||"").startsWith("zh")?"zh":"en" } catch {}
 function _l(z,e){return __lang==="zh"?z:e}
 function toggleTheme(){const d=document.documentElement;const t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);localStorage.setItem("kbserve_theme",t);document.getElementById("themeBtn").textContent=_l(t==="light"?"日间":"夜间",t==="light"?"Light":"Dark")}
