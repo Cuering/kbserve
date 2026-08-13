@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kbserve</title>
+<style>
+*{box-sizing:border-box}body{font:14px/1.5 -apple-system,sans-serif;margin:0;background:#f5f7fa;color:#1c2733;display:flex;flex-direction:column;height:100vh}
+header{background:#fff;border-bottom:1px solid #e1e6ef;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{margin:0;font-size:17px}
+header nav{display:flex;gap:6px;margin-left:auto}
+header nav button{background:transparent;border:1px solid #e1e6ef;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;color:#5c6b7a}
+header nav button.active{background:#3b6fe0;color:#fff;border-color:#3b6fe0}
+main{flex:1;display:flex;min-height:0}
+.pane{display:none;flex:1;padding:16px 20px;overflow-y:auto}
+.pane.active{display:block}
+.chat-box{max-width:720px;margin:0 auto;display:flex;flex-direction:column;height:100%}
+.chat-msgs{flex:1;overflow-y:auto;padding:8px 0}
+.msg{padding:10px 14px;border-radius:10px;margin-bottom:8px;max-width:85%}
+.msg-user{background:#3b6fe0;color:#fff;margin-left:auto}
+.msg-ai{background:#fff;border:1px solid #e1e6ef}
+.msg .sources{font-size:11px;color:#5c6b7a;margin-top:4px}
+.chat-input{display:flex;gap:8px;padding:12px 0;border-top:1px solid #e1e6ef}
+.chat-input input{flex:1;padding:10px 14px;border:1px solid #e1e6ef;border-radius:8px;font-size:14px}
+.chat-input button{background:#3b6fe0;color:#fff;border:0;padding:10px 20px;border-radius:8px;cursor:pointer}
+.chat-input button:disabled{opacity:.5}
+.feedback{display:flex;gap:4px;margin-top:4px;font-size:12px}
+.feedback button{background:transparent;border:1px solid #e1e6ef;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:11px}
+.feedback button.active{background:#3b6fe0;color:#fff}
+.panel{border:1px solid #e1e6ef;border-radius:10px;background:#fff;overflow:hidden;margin-bottom:12px}
+.panel h3{margin:0;padding:12px 16px;font-size:14px;border-bottom:1px solid #e1e6ef;background:#fafbfc}
+.panel-body{padding:12px 16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid #e1e6ef;vertical-align:top}
+th{color:#5c6b7a;font-weight:500;font-size:12px}
+.empty{padding:20px;text-align:center;color:#5c6b7a}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px}
+.tag-pending{background:#fbe9d0;color:#b8811b}
+.tag-approved{background:#d9f0e2;color:#2e9e62}
+.tag-rejected{background:#f7dcdb;color:#d4524d}
+form{display:flex;flex-direction:column;gap:8px;max-width:600px}
+form input,form textarea{padding:8px 12px;border:1px solid #e1e6ef;border-radius:6px;font-size:13px}
+form button{background:#3b6fe0;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer;align-self:flex-start}
+</style>
+</head>
+<body>
+<header>
+  <h1>kbserve</h1>
+  <span id="sub" style="color:#5c6b7a;font-size:12px">知识库客服系统</span>
+  <nav>
+    <button class="active" onclick="switchTab('chat')">客服对话</button>
+    <button onclick="switchTab('admin')">管理后台</button>
+  </nav>
+</header>
+<main>
+  <section class="pane active" id="pane-chat">
+    <div class="chat-box">
+      <div class="chat-msgs" id="chatMsgs">
+        <div class="msg msg-ai">您好！我是知识库客服助手，请问有什么可以帮助您的？</div>
+      </div>
+      <div class="chat-input">
+        <input id="qInput" placeholder="输入您的问题..." onkeydown="if(event.key==='Enter') ask()">
+        <button id="qBtn" onclick="ask()">发送</button>
+      </div>
+    </div>
+  </section>
+  <section class="pane" id="pane-admin">
+    <div id="adminContent" class="empty">加载中…</div>
+  </section>
+</main>
+<script>
+const BASE = "";
+let convId = null;
+async function api(method, body){ return fetch(BASE+method,{method:'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(r=>r.json()) }
+async function getApi(method){ return fetch(BASE+method).then(r=>r.json()) }
+
+// === Chat ===
+async function ask(){
+  const q = document.getElementById("qInput").value.trim();
+  if (!q) return;
+  const btn = document.getElementById("qBtn");
+  btn.disabled = true; btn.textContent = "思考中…";
+  addMsg(q, "user");
+  document.getElementById("qInput").value = "";
+  const res = await api("/qa", { question: q, userId: convId ? "user-" + convId : "anonymous" });
+  if (!convId) { const c = await api("/conv/start", { userId: "user-" + Date.now(), title: q.slice(0, 40) }); convId = c.id; }
+  addMsg(res.answer, "ai", res.sources, res.ok === false ? res.error : null);
+  btn.disabled = false; btn.textContent = "发送";
+}
+function addMsg(text, role, sources, error){
+  const box = document.getElementById("chatMsgs");
+  const div = document.createElement("div");
+  div.className = "msg msg-" + role;
+  const txt = document.createElement("div");
+  txt.textContent = text;
+  div.appendChild(txt);
+  if (sources && sources.length) {
+    const s = document.createElement("div");
+    s.className = "sources";
+    s.textContent = "来源: " + sources.map(x => x.title).join(", ");
+    div.appendChild(s);
+  }
+  if (error) {
+    const e = document.createElement("div");
+    e.className = "sources";
+    e.textContent = "错误: " + error;
+    e.style.color = "#d4524d";
+    div.appendChild(e);
+  }
+  if (role === "ai" && text) {
+    const fb = document.createElement("div");
+    fb.className = "feedback";
+    fb.innerHTML = `<button onclick="rate(1,this)">👍 有用</button><button onclick="rate(0,this)">👎 无用</button>`;
+    fb.dataset.question = txt.textContent;
+    fb.dataset.answer = text;
+    div.appendChild(fb);
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+let lastQuestion = "";
+async function rate(val, btn){
+  const fb = btn.closest(".feedback");
+  const q = fb.dataset.question;
+  const a = fb.dataset.answer;
+  await api("/qa/feedback", { question: q, answer: a, rating: val ? 5 : 1, userId: "user-" + (convId || ""), conversationId: convId });
+  fb.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+}
+
+// === Admin ===
+const ADMIN_TABS = { dashboard:"概览", kb:"知识库", qa:"QA审核", feedback:"反馈管理", reports:"报告" };
+let adminTab = "dashboard";
+
+function switchTab(tab){
+  document.querySelectorAll("header nav button").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll("header nav button").forEach(b => { if (b.textContent.includes(tab === "chat" ? "客服" : "管理")) b.classList.add("active") });
+  document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+  document.getElementById("pane-" + tab).classList.add("active");
+  if (tab === "admin") renderAdmin();
+}
+function switchAdminTab(tab){
+  adminTab = tab;
+  renderAdmin();
+}
+async function renderAdmin(){
+  const box = document.getElementById("adminContent");
+  let h = "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px'>";
+  for (const [k, v] of Object.entries(ADMIN_TABS)) {
+    h += `<button onclick="switchAdminTab('${k}')" style="background:${adminTab===k?'#3b6fe0':'transparent'};color:${adminTab===k?'#fff':'#5c6b7a'};border:1px solid #e1e6ef;padding:6px 14px;border-radius:6px;cursor:pointer">${v}</button>`;
+  }
+  h += "</div>";
+
+  switch (adminTab) {
+    case "dashboard": {
+      const s = await getApi("/admin/stats");
+      h += `<div class=panel><h3>系统概览</h3><div class=panel-body>
+        <table><tr><td>知识库文档</td><td><b>${s.kbCount || 0}</b></td></tr>
+        <tr><td>待处理反馈</td><td><b>${s.pendingFeedback || 0}</b></td></tr>
+        <tr><td>待审核QA</td><td><b>${s.pendingQa || 0}</b></td></tr>
+        <tr><td>会话总数</td><td><b>${s.conversations || 0}</b></td></tr>
+        <tr><td>用户数</td><td><b>${s.users || 0}</b></td></tr></table></div></div>`;
+      break;
+    }
+    case "kb": {
+      const docs = await getApi("/admin/kb/list");
+      h += `<div class=panel><h3>知识库文档</h3><div class=panel-body>
+        <form onsubmit="return addKb(event)"><input id="kbTitle" placeholder="标题" required>
+        <textarea id="kbContent" rows=4 placeholder="内容" required></textarea>
+        <input id="kbTags" placeholder="标签（逗号分隔）"><button>添加文档</button></form></div></div>`;
+      if (docs.length) {
+        h += `<div class=panel><div class=panel-body><table><tr><th>标题</th><th>标签</th><th>版本</th><th>操作</th></tr>`;
+        for (const d of docs) {
+          h += `<tr><td><b>${esc(d.title)}</b></td><td>${esc(d.tags || "")}</td><td>v${d.version}</td>
+            <td><button onclick="deleteKb(${d.id})" style="background:transparent;border:1px solid #e1e6ef;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">删除</button></td></tr>`;
+        }
+        h += `</table></div></div>`;
+      } else { h += `<div class=panel><div class=panel-body><div class=empty>暂无文档</div></div></div>`; }
+      break;
+    }
+    case "qa": {
+      const qas = await getApi("/admin/qa/list");
+      h += `<div class=panel><h3>QA审核</h3><div class=panel-body>`;
+      if (qas.length) {
+        h += `<table><tr><th>问题</th><th>回答</th><th>状态</th><th>操作</th></tr>`;
+        for (const q of qas) {
+          h += `<tr><td>${esc(q.question).slice(0,60)}</td><td>${esc(q.answer).slice(0,60)}</td>
+            <td><span class="tag tag-${q.status}">${q.status}</span></td>
+            <td>${q.status === 'pending' ? `<button onclick="approveQa(${q.id})" style="color:#2e9e62;border:1px solid #2e9e62;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">通过</button><button onclick="rejectQa(${q.id})" style="color:#d4524d;border:1px solid #d4524d;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">拒绝</button>` : ''}</td></tr>`;
+        }
+        h += `</table>`;
+      } else { h += `<div class=empty>暂无QA记录</div>`; }
+      h += `</div></div>`;
+      break;
+    }
+    case "feedback": {
+      const fb = await getApi("/admin/feedback");
+      h += `<div class=panel><h3>待处理反馈</h3><div class=panel-body>`;
+      if (fb.length) {
+        h += `<table><tr><th>问题</th><th>评分</th><th>评论</th><th>操作</th></tr>`;
+        for (const f of fb) {
+          h += `<tr><td>${esc(f.question).slice(0,40)}</td><td>${f.rating}/5</td><td>${esc(f.comment||"").slice(0,40)}</td>
+            <td><button onclick="reviewFb(${f.id})" style="background:transparent;border:1px solid #e1e6ef;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">标记已处理</button></td></tr>`;
+        }
+        h += `</table>`;
+      } else { h += `<div class=empty>暂无反馈</div>`; }
+      h += `</div></div>`;
+      break;
+    }
+    case "reports": {
+      h += `<div class=panel><h3>用户分析报告</h3><div class=panel-body>
+        <button onclick="genReport()" style="background:#3b6fe0;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer">生成汇总报告</button>
+        <pre id="reportContent" style="margin-top:12px;padding:12px;background:#f8f9fa;border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow:auto"></pre>
+      </div></div>`;
+      break;
+    }
+  }
+  box.innerHTML = h;
+}
+function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])) }
+async function addKb(e){ e.preventDefault(); await api("/admin/kb/add",{title:document.getElementById("kbTitle").value,content:document.getElementById("kbContent").value,tags:document.getElementById("kbTags").value}); renderAdmin(); return false }
+async function deleteKb(id){ if(confirm("确定删除？")){ await api("/admin/kb/delete",{id}); renderAdmin() } }
+async function approveQa(id){ await api("/admin/qa/approve",{id}); renderAdmin() }
+async function rejectQa(id){ await api("/admin/qa/reject",{id}); renderAdmin() }
+async function reviewFb(id){ await api("/admin/feedback/review",{id}); renderAdmin() }
+async function genReport(){ const r=await getApi("/admin/report/all"); document.getElementById("reportContent").textContent=r.report }
+</script>
+</body>
+</html>

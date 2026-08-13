@@ -1,0 +1,14 @@
+{
+  "name": "kbserve",
+  "version": "0.1.0",
+  "description": "Knowledge Base + Customer Service Engine (based on selfforge core)",
+  "type": "module",
+  "scripts": {
+    "serve": "bun serve.ts",
+    "test": "bun test",
+    "build": "bun build.mjs"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.11"
+  }
+}
