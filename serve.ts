@@ -22,6 +22,7 @@ import { recordCall, getCallStats } from "./lib/dashboard-log"
 import { scanPlugins, getPlugins, togglePlugin, ensurePluginTables } from "./lib/plugins"
 import { processPlatformMessage, getPlatformConfig, setPlatformConfig, listAdapters, ensurePlatformTables } from "./lib/platform"
 import { fetchMarketplace, installPlugin, uninstallPlugin } from "./lib/marketplace"
+import { verifyToken, generateToken, setToken, getToken, isAuthConfigured } from "./lib/auth"
 import { exportReportHtml, exportKbHtml } from "./lib/export"
 
 const PORT = Number(process.env.KBSERVE_PORT || 3090)
@@ -145,8 +146,40 @@ const server = createServer(async (req, res) => {
   if (url === "/api/stats") { json(res, computeStats()); return }
   if (url === "/api/calls") { json(res, getCallStats()); return }
 
-  // --- Admin API ---
+  // Auth check
+  function checkAuth(): boolean {
+    if (!isAuthConfigured()) return true // No auth configured = open
+    const auth = req.headers["authorization"] || ""
+    const token = auth.replace(/^Bearer\s+/i, "") || new URL(req.url || "/", "http://x").searchParams.get("token") || ""
+    return verifyToken(token)
+  }
+
+  // Auth endpoints (no auth required)
+  if (url === "/auth/login" && method === "POST") {
+    try {
+      const body = JSON.parse(await readBody(req))
+      if (verifyToken(body.token || "")) {
+        json(res, { ok: true, token: body.token, configured: true })
+      } else {
+        json(res, { ok: false, error: "invalid token" }, 401)
+      }
+    } catch (e) { json(res, { error: (e as Error).message }, 400) }
+    return
+  }
+  if (url === "/auth/status") { json(res, { configured: isAuthConfigured(), hasToken: !!getToken() }); return }
+  if (url === "/auth/setup" && method === "POST" && !isAuthConfigured()) {
+    try {
+      const body = JSON.parse(await readBody(req))
+      const token = body.token || generateToken()
+      setToken(token)
+      json(res, { ok: true, token })
+    } catch (e) { json(res, { error: (e as Error).message }, 400) }
+    return
+  }
+
+  // --- Admin API (requires auth) ---
   if (url.startsWith("/admin/")) {
+    if (!checkAuth()) { json(res, { error: "unauthorized" }, 401); return }
     try {
       const action = url.replace("/admin/", "")
       const body = method === "POST" ? JSON.parse(await readBody(req)) : {}

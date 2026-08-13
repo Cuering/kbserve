@@ -99,7 +99,33 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;padding:1
 </main>
 <script>
 const BASE = "";
-let __lang = "zh", activeMainTab = "chat", adminTab = "dashboard";
+let __lang = "zh", activeMainTab = "chat", adminTab = "dashboard", adminToken = "";
+
+// Admin auth
+try { adminToken = localStorage.getItem("kbserve_admin_token") || "" } catch {}
+async function checkAuth(){
+  if(adminToken) return true;
+  const st = await get("/auth/status");
+  if(!st.configured) return true;
+  const pw = prompt(_l("请输入管理员令牌","Enter admin token"));
+  if(!pw) return false;
+  const r = await post("/auth/login",{token:pw});
+  if(r.ok){ adminToken = r.token; try{localStorage.setItem("kbserve_admin_token",adminToken)}catch{} return true }
+  alert(_l("令牌错误","Invalid token"));
+  return false;
+}
+// Wrap fetch to include auth header
+const _origPost = post;
+async function post(p,b){
+  const headers = {"Content-Type":"application/json"};
+  if(adminToken) headers["Authorization"] = "Bearer "+adminToken;
+  return (await fetch(BASE+p,{method:"POST",headers,body:JSON.stringify(b||{})})).json();
+}
+async function get(p){
+  const headers = {};
+  if(adminToken) headers["Authorization"] = "Bearer "+adminToken;
+  return (await fetch(BASE+p,{headers})).json();
+}
 try { __lang = localStorage.getItem("kbserve_lang") || (navigator.language||"").startsWith("zh")?"zh":"en" } catch {}
 function _l(z,e){return __lang==="zh"?z:e}
 function toggleTheme(){const d=document.documentElement;const t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);localStorage.setItem("kbserve_theme",t);document.getElementById("themeBtn").textContent=_l(t==="light"?"日间":"夜间",t==="light"?"Light":"Dark")}
@@ -161,6 +187,7 @@ function switchAdmin(t){
   document.querySelector(`#adminNav button[data-tab="${t}"]`)?.classList.add("active");
 }
 async function renderAdmin(){
+  if(!await checkAuth()){document.getElementById("adminContent").innerHTML=`<div class=card><h3>${_l("需要认证","Auth Required")}</h3><div class=panel-body><p>${_l("请输入管理员令牌访问管理后台。","Enter admin token to access the management panel.")}</p><button class="btn btn-p" onclick="renderAdmin()">${_l("重试","Retry")}</button></div></div>`;return}
   const nav=document.getElementById("adminNav"),box=document.getElementById("adminContent");
   nav.innerHTML=Object.entries(TABS).map(([k,v])=>`<button data-tab="${k}" onclick="switchAdmin('${k}')" style="background:${adminTab===k?'var(--acc)':'transparent'};color:${adminTab===k?'var(--on-acc)':'var(--dim)'};border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap">${__lang==="zh"?v.split("|")[0]:v.split("|")[1]}</button>`).join("");
   switch(adminTab){
