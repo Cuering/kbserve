@@ -2,228 +2,295 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>kbserve</title>
 <style>
-*{box-sizing:border-box}body{font:14px/1.5 -apple-system,sans-serif;margin:0;background:#f5f7fa;color:#1c2733;display:flex;flex-direction:column;height:100vh}
-header{background:#fff;border-bottom:1px solid #e1e6ef;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-header h1{margin:0;font-size:17px}
-header nav{display:flex;gap:6px;margin-left:auto}
-header nav button{background:transparent;border:1px solid #e1e6ef;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;color:#5c6b7a}
-header nav button.active{background:#3b6fe0;color:#fff;border-color:#3b6fe0}
-main{flex:1;display:flex;min-height:0}
-.pane{display:none;flex:1;padding:16px 20px;overflow-y:auto}
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#f4f5f7;--panel:#fff;--line:#e1e4e8;--fg:#1c2733;--dim:#5c6b7a;--acc:#3b6fe0;--acc-txt:#1d4fb8;--on-acc:#fff;--good:#2e9e62;--warn:#b8811b;--bad:#d4524d;--hover:#eef2f8;--radius:10px;--shadow:0 1px 3px rgba(0,0,0,.08)}
+[data-theme="dark"]{--bg:#0f1115;--panel:#171a21;--line:#262b36;--fg:#d7dbe2;--dim:#8b93a3;--acc:#5b8def;--acc-txt:#9ec2ff;--on-acc:#fff;--good:#4caf7d;--warn:#d9a13b;--bad:#e2605b;--hover:#1c2130;--shadow:0 1px 3px rgba(0,0,0,.3)}
+body{font:14px/1.5 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--fg);min-height:100vh}
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:10;flex-wrap:wrap}
+header h1{font-size:16px;color:var(--fg);margin:0}
+header .sub{color:var(--dim);font-size:12px}
+header nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+header nav button{background:transparent;border:1px solid var(--line);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px;color:var(--dim);white-space:nowrap}
+header nav button.active{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+header .hdr-actions{display:flex;gap:6px;margin-left:auto}
+header .hdr-actions button{background:transparent;border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;color:var(--dim)}
+main{display:flex;min-height:0;height:calc(100vh - 54px)}
+.pane{display:none;flex:1;overflow-y:auto;padding:12px}
 .pane.active{display:block}
-.chat-box{max-width:720px;margin:0 auto;display:flex;flex-direction:column;height:100%}
-.chat-msgs{flex:1;overflow-y:auto;padding:8px 0}
-.msg{padding:10px 14px;border-radius:10px;margin-bottom:8px;max-width:85%}
-.msg-user{background:#3b6fe0;color:#fff;margin-left:auto}
-.msg-ai{background:#fff;border:1px solid #e1e6ef}
-.msg .sources{font-size:11px;color:#5c6b7a;margin-top:4px}
-.chat-input{display:flex;gap:8px;padding:12px 0;border-top:1px solid #e1e6ef}
-.chat-input input{flex:1;padding:10px 14px;border:1px solid #e1e6ef;border-radius:8px;font-size:14px}
-.chat-input button{background:#3b6fe0;color:#fff;border:0;padding:10px 20px;border-radius:8px;cursor:pointer}
-.chat-input button:disabled{opacity:.5}
-.feedback{display:flex;gap:4px;margin-top:4px;font-size:12px}
-.feedback button{background:transparent;border:1px solid #e1e6ef;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:11px}
-.feedback button.active{background:#3b6fe0;color:#fff}
-.panel{border:1px solid #e1e6ef;border-radius:10px;background:#fff;overflow:hidden;margin-bottom:12px}
-.panel h3{margin:0;padding:12px 16px;font-size:14px;border-bottom:1px solid #e1e6ef;background:#fafbfc}
-.panel-body{padding:12px 16px}
+.max-w{max-width:960px;margin:0 auto}
+h2{font-size:15px;margin:0 0 12px;color:var(--fg)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px}
+.card h3{font-size:13px;color:var(--fg);margin:0 0 8px}
+.card .meta{color:var(--dim);font-size:12px;margin-bottom:6px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:12px}
+.stat-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;text-align:center}
+.stat-card b{display:block;font-size:24px;color:var(--fg);line-height:1.3}
+.stat-card span{font-size:12px;color:var(--dim)}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:8px 12px;text-align:left;border-bottom:1px solid #e1e6ef;vertical-align:top}
-th{color:#5c6b7a;font-weight:500;font-size:12px}
-.empty{padding:20px;text-align:center;color:#5c6b7a}
-.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px}
-.tag-pending{background:#fbe9d0;color:#b8811b}
-.tag-approved{background:#d9f0e2;color:#2e9e62}
-.tag-rejected{background:#f7dcdb;color:#d4524d}
-form{display:flex;flex-direction:column;gap:8px;max-width:600px}
-form input,form textarea{padding:8px 12px;border:1px solid #e1e6ef;border-radius:6px;font-size:13px}
-form button{background:#3b6fe0;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer;align-self:flex-start}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:500;font-size:12px}
+tr:hover{background:var(--hover)}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;margin-right:4px;white-space:nowrap}
+.tag-active{background:#d9f0e2;color:var(--good)}
+.tag-pending{background:#fbe9d0;color:var(--warn)}
+.tag-archived,.tag-rejected{background:#f7dcdb;color:var(--bad)}
+.btn{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer;font-size:12px;text-decoration:none}
+.btn:hover{color:var(--fg);border-color:var(--acc)}
+.btn-p{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.btn-p:hover{filter:brightness(1.1)}
+.btn-d{color:var(--bad);border-color:var(--bad)}
+.btn-d:hover{background:var(--bad);color:var(--on-acc)}
+.btn-sm{padding:3px 8px;font-size:11px}
+input,textarea,select{padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;background:var(--panel);color:var(--fg);width:100%}
+textarea{resize:vertical;min-height:60px}
+form{display:flex;flex-direction:column;gap:8px;max-width:100%}
+.form-row{display:flex;gap:8px;flex-wrap:wrap}
+.form-row>*{flex:1;min-width:140px}
+.empty{padding:20px;text-align:center;color:var(--dim)}
+pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;padding:10px;background:var(--bg);border-radius:6px;color:var(--fg)}
+#chatBox{display:flex;flex-direction:column;height:calc(100vh - 100px);max-width:680px;margin:0 auto}
+#chatMsgs{flex:1;overflow-y:auto;padding:8px 0;display:flex;flex-direction:column;gap:6px}
+.msg{padding:10px 14px;border-radius:12px;max-width:88%;word-break:break-word;font-size:14px;line-height:1.6}
+.msg-user{background:var(--acc);color:var(--on-acc);align-self:flex-end;border-bottom-right-radius:4px}
+.msg-ai{background:var(--panel);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:4px}
+.msg .time{font-size:10px;color:var(--dim);margin-top:4px;opacity:.7}
+.msg .sources{font-size:11px;color:var(--dim);margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+.msg .feedback{display:flex;gap:6px;margin-top:6px}
+.msg .feedback button{background:transparent;border:1px solid var(--line);border-radius:4px;cursor:pointer;padding:3px 10px;font-size:11px;color:var(--dim)}
+.msg .feedback button.active{background:var(--acc);color:var(--on-acc);border-color:var(--acc)}
+.chat-inp{display:flex;gap:8px;padding:10px 0;border-top:1px solid var(--line);background:var(--bg)}
+.chat-inp input{flex:1;padding:10px 14px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+.chat-inp button{background:var(--acc);color:var(--on-acc);border:0;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px}
+.chat-inp button:disabled{opacity:.5}
+@media(max-width:640px){header{padding:8px 12px}header h1{font-size:14px}header nav button{padding:4px 8px;font-size:11px}.stats{grid-template-columns:repeat(2,1fr)}.stat-card b{font-size:20px}#chatBox{height:calc(100vh - 80px)}.msg{max-width:95%;font-size:13px}}
 </style>
 </head>
 <body>
 <header>
   <h1>kbserve</h1>
-  <span id="sub" style="color:#5c6b7a;font-size:12px">知识库客服系统</span>
-  <nav>
-    <button class="active" onclick="switchTab('chat')">客服对话</button>
-    <button onclick="switchTab('admin')">管理后台</button>
-  </nav>
+  <span class="sub" id="sub">-</span>
+  <div class="hdr-actions">
+    <button id="themeBtn" onclick="toggleTheme()">日间</button>
+    <button onclick="switchMain('chat')">客服</button>
+    <button id="adminBtn" onclick="switchMain('admin')">管理</button>
+  </div>
 </header>
 <main>
   <section class="pane active" id="pane-chat">
-    <div class="chat-box">
-      <div class="chat-msgs" id="chatMsgs">
-        <div class="msg msg-ai">您好！我是知识库客服助手，请问有什么可以帮助您的？</div>
+    <div id="chatBox">
+      <div id="chatMsgs">
+        <div class="msg msg-ai" id="greetingMsg">您好！</div>
       </div>
-      <div class="chat-input">
-        <input id="qInput" placeholder="输入您的问题..." onkeydown="if(event.key==='Enter') ask()">
+      <div class="chat-inp">
+        <input id="qInput" placeholder="输入问题..." onkeydown="if(event.key==='Enter') ask()">
         <button id="qBtn" onclick="ask()">发送</button>
       </div>
     </div>
   </section>
   <section class="pane" id="pane-admin">
-    <div id="adminContent" class="empty">加载中…</div>
+    <div class="max-w">
+      <div id="adminNav" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px"></div>
+      <div id="adminContent" class="empty">加载中…</div>
+    </div>
   </section>
 </main>
 <script>
 const BASE = "";
-let convId = null;
-async function api(method, body){ return fetch(BASE+method,{method:'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(r=>r.json()) }
-async function getApi(method){ return fetch(BASE+method).then(r=>r.json()) }
+let __lang = "zh", activeMainTab = "chat", adminTab = "dashboard";
+try { __lang = localStorage.getItem("kbserve_lang") || (navigator.language||"").startsWith("zh")?"zh":"en" } catch {}
+function _l(z,e){return __lang==="zh"?z:e}
+function toggleTheme(){const d=document.documentElement;const t=d.getAttribute("data-theme")==="dark"?"light":"dark";d.setAttribute("data-theme",t);localStorage.setItem("kbserve_theme",t);document.getElementById("themeBtn").textContent=_l(t==="light"?"日间":"夜间",t==="light"?"Light":"Dark")}
+(function(){try{const t=localStorage.getItem("kbserve_theme")||"light";document.documentElement.setAttribute("data-theme",t);document.getElementById("themeBtn").textContent=_l(t==="light"?"日间":"夜间",t==="light"?"Light":"Dark")}catch{}})()
+
+// API helpers
+async function get(p){return(await fetch(BASE+p)).json()}
+async function post(p,b){return(await fetch(BASE+p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})})).json()}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+// Switch main
+function switchMain(tab){
+  activeMainTab=tab;
+  document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));
+  document.getElementById("pane-"+tab).classList.add("active");
+  document.querySelectorAll("header .hdr-actions button").forEach(b=>b.classList.remove("active"));
+  document.getElementById(tab==="chat"?"adminBtn":"chatBtn").classList.remove("active");
+  document.getElementById(tab==="chat"?"chatBtn":"adminBtn").classList.remove("active");
+  if(tab==="admin")renderAdmin();
+  else if(tab==="chat")loadGreeting();
+}
+document.getElementById("adminBtn").addEventListener("click",()=>switchMain("admin"));
+switchMain("chat");
 
 // === Chat ===
+let convId = null;
+async function loadGreeting(){
+  try{const p=await get("/admin/persona/get");if(p.greeting)document.getElementById("greetingMsg").textContent=p.greeting;document.getElementById("sub").textContent=p.name||"kbserve"}catch{}
+}
 async function ask(){
-  const q = document.getElementById("qInput").value.trim();
-  if (!q) return;
-  const btn = document.getElementById("qBtn");
-  btn.disabled = true; btn.textContent = "思考中…";
-  addMsg(q, "user");
-  document.getElementById("qInput").value = "";
-  const res = await api("/qa", { question: q, userId: convId ? "user-" + convId : "anonymous" });
-  if (!convId) { const c = await api("/conv/start", { userId: "user-" + Date.now(), title: q.slice(0, 40) }); convId = c.id; }
-  addMsg(res.answer, "ai", res.sources, res.ok === false ? res.error : null);
-  btn.disabled = false; btn.textContent = "发送";
+  const q=document.getElementById("qInput").value.trim();if(!q)return;
+  const btn=document.getElementById("qBtn");btn.disabled=true;btn.textContent="…";
+  addMsg(q,"user");document.getElementById("qInput").value="";
+  const res=await post("/qa",{question:q,userId:"chat-"+(convId||"anon")});
+  if(!convId){const c=await post("/conv/start",{userId:"chat-"+Date.now(),title:q.slice(0,40)});convId=c.id}
+  addMsg(res.answer||res.error||"无回答","ai",res.sources,res.error);
+  btn.disabled=false;btn.textContent="发送";
 }
-function addMsg(text, role, sources, error){
-  const box = document.getElementById("chatMsgs");
-  const div = document.createElement("div");
-  div.className = "msg msg-" + role;
-  const txt = document.createElement("div");
-  txt.textContent = text;
-  div.appendChild(txt);
-  if (sources && sources.length) {
-    const s = document.createElement("div");
-    s.className = "sources";
-    s.textContent = "来源: " + sources.map(x => x.title).join(", ");
-    div.appendChild(s);
-  }
-  if (error) {
-    const e = document.createElement("div");
-    e.className = "sources";
-    e.textContent = "错误: " + error;
-    e.style.color = "#d4524d";
-    div.appendChild(e);
-  }
-  if (role === "ai" && text) {
-    const fb = document.createElement("div");
-    fb.className = "feedback";
-    fb.innerHTML = `<button onclick="rate(1,this)">👍 有用</button><button onclick="rate(0,this)">👎 无用</button>`;
-    fb.dataset.question = txt.textContent;
-    fb.dataset.answer = text;
-    div.appendChild(fb);
-  }
-  box.appendChild(div);
-  box.scrollTop = box.scrollHeight;
+function addMsg(text,role,sources,error){
+  const box=document.getElementById("chatMsgs");
+  const div=document.createElement("div");div.className="msg msg-"+role;
+  div.textContent=text;
+  if(sources&&sources.length){const s=document.createElement("div");s.className="sources";s.textContent=_l("来源:","Sources:")+sources.map(x=>x.title).join(", ");div.appendChild(s)}
+  if(error){const e=document.createElement("div");e.style.cssText="color:var(--bad);font-size:12px;margin-top:4px";e.textContent=error;div.appendChild(e)}
+  if(role==="ai"&&text){const fb=document.createElement("div");fb.className="feedback";fb.innerHTML='<button onclick="rate(5,this)">👍</button><button onclick="rate(1,this)">👎</button>';fb.dataset.q=text;fb.dataset.a=text;div.appendChild(fb)}
+  box.appendChild(div);box.scrollTop=box.scrollHeight;
 }
-let lastQuestion = "";
-async function rate(val, btn){
-  const fb = btn.closest(".feedback");
-  const q = fb.dataset.question;
-  const a = fb.dataset.answer;
-  await api("/qa/feedback", { question: q, answer: a, rating: val ? 5 : 1, userId: "user-" + (convId || ""), conversationId: convId });
-  fb.querySelectorAll("button").forEach(b => b.classList.remove("active"));
-  btn.classList.add("active");
+async function rate(v,btn){
+  const fb=btn.closest(".feedback");
+  await post("/qa/feedback",{question:fb.dataset.q,answer:fb.dataset.a,rating:v,userId:"chat-"+(convId||""),conversationId:convId});
+  fb.querySelectorAll("button").forEach(b=>b.classList.remove("active"));btn.classList.add("active");
 }
 
 // === Admin ===
-const ADMIN_TABS = { dashboard:"概览", kb:"知识库", qa:"QA审核", feedback:"反馈管理", reports:"报告" };
-let adminTab = "dashboard";
-
-function switchTab(tab){
-  document.querySelectorAll("header nav button").forEach(b => b.classList.remove("active"));
-  document.querySelectorAll("header nav button").forEach(b => { if (b.textContent.includes(tab === "chat" ? "客服" : "管理")) b.classList.add("active") });
-  document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
-  document.getElementById("pane-" + tab).classList.add("active");
-  if (tab === "admin") renderAdmin();
-}
-function switchAdminTab(tab){
-  adminTab = tab;
-  renderAdmin();
+const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",qa:"QA审核|QA Review",feedback:"反馈|Feedback",persona:"人设|Persona",provider:"模型|Provider",plugins:"插件|Plugins",reports:"报告|Reports"};
+function switchAdmin(t){
+  adminTab=t;renderAdmin();
+  document.querySelectorAll("#adminNav button").forEach(b=>b.classList.remove("active"));
+  document.querySelector(`#adminNav button[data-tab="${t}"]`)?.classList.add("active");
 }
 async function renderAdmin(){
-  const box = document.getElementById("adminContent");
-  let h = "<div style='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px'>";
-  for (const [k, v] of Object.entries(ADMIN_TABS)) {
-    h += `<button onclick="switchAdminTab('${k}')" style="background:${adminTab===k?'#3b6fe0':'transparent'};color:${adminTab===k?'#fff':'#5c6b7a'};border:1px solid #e1e6ef;padding:6px 14px;border-radius:6px;cursor:pointer">${v}</button>`;
+  const nav=document.getElementById("adminNav"),box=document.getElementById("adminContent");
+  nav.innerHTML=Object.entries(TABS).map(([k,v])=>`<button data-tab="${k}" onclick="switchAdmin('${k}')" style="background:${adminTab===k?'var(--acc)':'transparent'};color:${adminTab===k?'var(--on-acc)':'var(--dim)'};border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap">${__lang==="zh"?v.split("|")[0]:v.split("|")[1]}</button>`).join("");
+  switch(adminTab){
+    case"dashboard":renderDash(box);break;
+    case"kb":renderKb(box);break;
+    case"qa":renderQa(box);break;
+    case"feedback":renderFeedback(box);break;
+    case"persona":renderPersona(box);break;
+    case"provider":renderProvider(box);break;
+    case"plugins":renderPlugins(box);break;
+    case"reports":renderReports(box);break;
   }
-  h += "</div>";
-
-  switch (adminTab) {
-    case "dashboard": {
-      const s = await getApi("/admin/stats");
-      h += `<div class=panel><h3>系统概览</h3><div class=panel-body>
-        <table><tr><td>知识库文档</td><td><b>${s.kbCount || 0}</b></td></tr>
-        <tr><td>待处理反馈</td><td><b>${s.pendingFeedback || 0}</b></td></tr>
-        <tr><td>待审核QA</td><td><b>${s.pendingQa || 0}</b></td></tr>
-        <tr><td>会话总数</td><td><b>${s.conversations || 0}</b></td></tr>
-        <tr><td>用户数</td><td><b>${s.users || 0}</b></td></tr></table></div></div>`;
-      break;
-    }
-    case "kb": {
-      const docs = await getApi("/admin/kb/list");
-      h += `<div class=panel><h3>知识库文档</h3><div class=panel-body>
-        <form onsubmit="return addKb(event)"><input id="kbTitle" placeholder="标题" required>
-        <textarea id="kbContent" rows=4 placeholder="内容" required></textarea>
-        <input id="kbTags" placeholder="标签（逗号分隔）"><button>添加文档</button></form></div></div>`;
-      if (docs.length) {
-        h += `<div class=panel><div class=panel-body><table><tr><th>标题</th><th>标签</th><th>版本</th><th>操作</th></tr>`;
-        for (const d of docs) {
-          h += `<tr><td><b>${esc(d.title)}</b></td><td>${esc(d.tags || "")}</td><td>v${d.version}</td>
-            <td><button onclick="deleteKb(${d.id})" style="background:transparent;border:1px solid #e1e6ef;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">删除</button></td></tr>`;
-        }
-        h += `</table></div></div>`;
-      } else { h += `<div class=panel><div class=panel-body><div class=empty>暂无文档</div></div></div>`; }
-      break;
-    }
-    case "qa": {
-      const qas = await getApi("/admin/qa/list");
-      h += `<div class=panel><h3>QA审核</h3><div class=panel-body>`;
-      if (qas.length) {
-        h += `<table><tr><th>问题</th><th>回答</th><th>状态</th><th>操作</th></tr>`;
-        for (const q of qas) {
-          h += `<tr><td>${esc(q.question).slice(0,60)}</td><td>${esc(q.answer).slice(0,60)}</td>
-            <td><span class="tag tag-${q.status}">${q.status}</span></td>
-            <td>${q.status === 'pending' ? `<button onclick="approveQa(${q.id})" style="color:#2e9e62;border:1px solid #2e9e62;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">通过</button><button onclick="rejectQa(${q.id})" style="color:#d4524d;border:1px solid #d4524d;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">拒绝</button>` : ''}</td></tr>`;
-        }
-        h += `</table>`;
-      } else { h += `<div class=empty>暂无QA记录</div>`; }
-      h += `</div></div>`;
-      break;
-    }
-    case "feedback": {
-      const fb = await getApi("/admin/feedback");
-      h += `<div class=panel><h3>待处理反馈</h3><div class=panel-body>`;
-      if (fb.length) {
-        h += `<table><tr><th>问题</th><th>评分</th><th>评论</th><th>操作</th></tr>`;
-        for (const f of fb) {
-          h += `<tr><td>${esc(f.question).slice(0,40)}</td><td>${f.rating}/5</td><td>${esc(f.comment||"").slice(0,40)}</td>
-            <td><button onclick="reviewFb(${f.id})" style="background:transparent;border:1px solid #e1e6ef;border-radius:4px;cursor:pointer;padding:2px 8px;font-size:12px">标记已处理</button></td></tr>`;
-        }
-        h += `</table>`;
-      } else { h += `<div class=empty>暂无反馈</div>`; }
-      h += `</div></div>`;
-      break;
-    }
-    case "reports": {
-      h += `<div class=panel><h3>用户分析报告</h3><div class=panel-body>
-        <button onclick="genReport()" style="background:#3b6fe0;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer">生成汇总报告</button>
-        <pre id="reportContent" style="margin-top:12px;padding:12px;background:#f8f9fa;border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:400px;overflow:auto"></pre>
-      </div></div>`;
-      break;
-    }
-  }
-  box.innerHTML = h;
 }
-function esc(s){ return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])) }
-async function addKb(e){ e.preventDefault(); await api("/admin/kb/add",{title:document.getElementById("kbTitle").value,content:document.getElementById("kbContent").value,tags:document.getElementById("kbTags").value}); renderAdmin(); return false }
-async function deleteKb(id){ if(confirm("确定删除？")){ await api("/admin/kb/delete",{id}); renderAdmin() } }
-async function approveQa(id){ await api("/admin/qa/approve",{id}); renderAdmin() }
-async function rejectQa(id){ await api("/admin/qa/reject",{id}); renderAdmin() }
-async function reviewFb(id){ await api("/admin/feedback/review",{id}); renderAdmin() }
-async function genReport(){ const r=await getApi("/admin/report/all"); document.getElementById("reportContent").textContent=r.report }
+async function renderDash(box){
+  const s=await get("/admin/stats");
+  box.innerHTML=`<div class=stats>
+    <div class=stat-card><b>${s.kbCount||0}</b><span>${_l("知识库","KB Docs")}</span></div>
+    <div class=stat-card><b>${s.conversations||0}</b><span>${_l("会话","Conversations")}</span></div>
+    <div class=stat-card><b>${s.users||0}</b><span>${_l("用户","Users")}</span></div>
+    <div class=stat-card><b>${s.pendingFeedback||0}</b><span>${_l("待处理反馈","Pending")}</span></div>
+    <div class=stat-card><b>${s.pendingQa||0}</b><span>${_l("待审核QA","QA Pending")}</span></div>
+    <div class=stat-card><b>${s.todayConvs||0}</b><span>${_l("今日会话","Today")}</span></div>
+    <div class=stat-card><b>${Number(s.avgRating||0).toFixed(1)}</b><span>${_l("平均评分","Avg Rating")}</span></div>
+  </div>
+  <div class=card><h3>${_l("系统信息","System Info")}</h3>
+    <div style="font-size:12px;color:var(--dim)"><span id="sysInfo"></span></div>
+  </div>`;
+  try{const h=await get("/health");document.getElementById("sysInfo").innerHTML=_l(`PID: ${h.pid} · 插件: ${h.plugins||0} 个`,"PID: "+h.pid+" · Plugins: "+(h.plugins||0))}catch{}
+}
+async function renderKb(box){
+  const docs=await get("/admin/kb/list");
+  box.innerHTML=`<div class=card><h3>${_l("添加文档","Add Document")}</h3>
+    <form onsubmit="return addKb(event)">
+      <input id="kbTitle" placeholder="${_l("标题","Title")}" required>
+      <textarea id="kbContent" rows=4 placeholder="${_l("内容","Content")}" required></textarea>
+      <input id="kbTags" placeholder="${_l("标签（逗号分隔）","Tags (comma)")}">
+      <button class="btn btn-p">${_l("添加","Add")}</button>
+    </form></div>`;
+  if(docs.length){
+    let h=`<div class=card><div class=table-wrap><table><tr><th>${_l("标题","Title")}</th><th>${_l("状态","Status")}</th><th>${_l("版本","Ver")}</th><th>${_l("操作","Actions")}</th></tr>`;
+    for(const d of docs){
+      h+=`<tr><td><b>${esc(d.title)}</b><div class=meta>${esc((d.content||"").slice(0,60))}…</div></td>
+        <td><span class="tag tag-${d.status}">${d.status}</span></td><td>v${d.version}</td>
+        <td><button class="btn btn-sm btn-d" onclick="deleteKb(${d.id})">${_l("删除","Del")}</button></td></tr>`;
+    }
+    box.innerHTML+=h+`</table></div></div>`;
+  }else box.innerHTML+=`<div class=card><div class=empty>${_l("暂无文档","No documents")}</div></div>`;
+}
+async function renderQa(box){
+  const qas=await get("/admin/qa/list");
+  box.innerHTML=`<div class=card><h3>${_l("QA审核","QA Review")}</h3>`;
+  if(qas.length){
+    let h=`<div class=table-wrap><table><tr><th>${_l("问题","Question")}</th><th>${_l("回答","Answer")}</th><th>${_l("状态","Status")}</th><th>${_l("操作","Actions")}</th></tr>`;
+    for(const q of qas){
+      h+=`<tr><td>${esc((q.question||"").slice(0,50))}</td><td>${esc((q.answer||"").slice(0,50))}</td>
+        <td><span class="tag tag-${q.status}">${q.status}</span></td>
+        <td>${q.status==="pending"?`<button class="btn btn-sm" style="color:var(--good)" onclick="approveQa(${q.id})">${_l("通过","Approve")}</button><button class="btn btn-sm btn-d" onclick="rejectQa(${q.id})">${_l("拒绝","Reject")}</button>`:""}</td></tr>`;
+    }
+    box.innerHTML+=h+`</table></div></div>`;
+  }else box.innerHTML+=`<div class=empty>${_l("暂无QA记录","No QA pairs")}</div></div>`;
+}
+async function renderFeedback(box){
+  const fb=await get("/admin/feedback");
+  box.innerHTML=`<div class=card><h3>${_l("待处理反馈","Pending Feedback")}</h3>`;
+  if(fb.length){
+    let h=`<div class=table-wrap><table><tr><th>${_l("问题","Question")}</th><th>${_l("评分","Rating")}</th><th>${_l("评论","Comment")}</th><th>${_l("操作","Actions")}</th></tr>`;
+    for(const f of fb){
+      h+=`<tr><td>${esc((f.question||"").slice(0,30))}</td><td>${"★".repeat(f.rating||0)}${"☆".repeat(5-(f.rating||0))}</td><td>${esc((f.comment||"").slice(0,30))}</td>
+        <td><button class="btn btn-sm" onclick="reviewFb(${f.id})">${_l("标记已处理","Mark Reviewed")}</button></td></tr>`;
+    }
+    box.innerHTML+=h+`</table></div></div>`;
+  }else box.innerHTML+=`<div class=empty>${_l("暂无反馈","No feedback")}</div></div>`;
+}
+async function renderPersona(box){
+  const p=await get("/admin/persona/get");
+  box.innerHTML=`<div class=card><h3>${_l("人设配置","Persona Settings")}</h3>
+    <form onsubmit="return savePersona(event)">
+      <div class=form-row><div><label>${_l("名称","Name")}</label><input id="pName" value="${esc(p.name||"")}"></div></div>
+      <div><label>${_l("欢迎语","Greeting")}</label><textarea id="pGreeting" rows=2>${esc(p.greeting||"")}</textarea></div>
+      <div><label>${_l("简介","About")}</label><textarea id="pAbout" rows=2>${esc(p.about||"")}</textarea></div>
+      <button class="btn btn-p">${_l("保存","Save")}</button>
+    </form></div>`;
+}
+async function renderProvider(box){
+  const p=await get("/admin/provider/get");
+  box.innerHTML=`<div class=card><h3>${_l("模型配置","Provider Settings")}</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">${_l("留空则使用 opencode auth.json 的默认配置。","Leave empty to use opencode's default auth.json config.")}</p>
+    <form onsubmit="return saveProvider(event)">
+      <div class=form-row>
+        <div><label>${_l("提供商","Provider")}</label><input id="prProvider" value="${esc(p.provider||"")}" placeholder="${_l("如 sensenova","e.g. sensenova")}"></div>
+        <div><label>${_l("模型","Model")}</label><input id="prModel" value="${esc(p.model||"")}" placeholder="deepseek-v4-flash"></div>
+      </div>
+      <div><label>${_l("API Key","API Key")}</label><input id="prKey" type="password" value="${esc(p.apiKey||"")}" placeholder="sk-..."></div>
+      <button class="btn btn-p">${_l("保存","Save")}</button>
+    </form>
+    <div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:6px;font-size:12px">
+      <b>${_l("OpenAI 兼容接口","OpenAI Compatible API")}</b><br>
+      <code>POST /v1/chat/completions</code><br>
+      <code style="font-size:11px;color:var(--dim)">${_l("可配置为任何 OpenAI 兼容客户端的 base URL","Use as base URL for any OpenAI-compatible client")}</code>
+    </div></div>`;
+}
+async function renderPlugins(box){
+  const r=await get("/admin/plugins/list");
+  box.innerHTML=`<div class=card><h3>${_l("插件管理","Plugins")}</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">${_l("插件目录: ~/.kbserve/plugins/","Plugin dir: ~/.kbserve/plugins/")}</p>`;
+  if(r.plugins&&r.plugins.length){
+    let h=`<table><tr><th>${_l("名称","Name")}</th><th>${_l("状态","Status")}</th><th>${_l("操作","Actions")}</th></tr>`;
+    for(const p of r.plugins)h+=`<tr><td>${esc(p.name)}</td><td><span class="tag tag-${p.enabled?"active":"archived"}">${p.enabled?_l("启用","Enabled"):_l("禁用","Disabled")}</span></td><td><button class="btn btn-sm" onclick="togglePlugin('${esc(p.name)}')">${_l("切换","Toggle")}</button></td></tr>`;
+    box.innerHTML+=h+`</table>`;
+  }else box.innerHTML+=`<div class=empty>${_l("暂无插件","No plugins")}</div>`;
+  box.innerHTML+=`</div>`;
+}
+async function renderReports(box){
+  box.innerHTML=`<div class=card><h3>${_l("用户分析报告","Reports")}</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btn btn-p" onclick="genReport('all')">${_l("生成汇总报告","All Users Report")}</button>
+    </div>
+    <pre id="reportContent" style="min-height:100px">${_l("点击按钮生成报告","Click to generate report")}</pre></div>`;
+}
+
+// Admin actions
+async function addKb(e){e.preventDefault();await post("/admin/kb/add",{title:document.getElementById("kbTitle").value,content:document.getElementById("kbContent").value,tags:document.getElementById("kbTags").value});renderAdmin()}
+async function deleteKb(id){if(confirm(_l("确定删除？","Delete?"))){await post("/admin/kb/delete",{id});renderAdmin()}}
+async function approveQa(id){await post("/admin/qa/approve",{id});renderAdmin()}
+async function rejectQa(id){await post("/admin/qa/reject",{id});renderAdmin()}
+async function reviewFb(id){await post("/admin/feedback/review",{id});renderAdmin()}
+async function savePersona(e){e.preventDefault();await post("/admin/persona/set",{name:document.getElementById("pName").value,greeting:document.getElementById("pGreeting").value,about:document.getElementById("pAbout").value});alert(_l("已保存","Saved"))}
+async function saveProvider(e){e.preventDefault();await post("/admin/provider/set",{provider:document.getElementById("prProvider").value,model:document.getElementById("prModel").value,apiKey:document.getElementById("prKey").value});alert(_l("已保存","Saved"))}
+async function togglePlugin(name){await post("/admin/plugins/toggle",{name});renderAdmin()}
+async function genReport(type){const r=await get("/admin/report/"+type);document.getElementById("reportContent").textContent=r.report||r.error||""}
 </script>
 </body>
 </html>
