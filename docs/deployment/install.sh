@@ -6,11 +6,14 @@ set -euo pipefail
 # Usage: bash install.sh [--dir /opt/kbserve] [--port 3090]
 # ─────────────────────────────────────────────────────────────────────────────
 
-REPO_URL="https://github.com/your-org/kbserve.git"
+REPO_URL="https://github.com/Cuering/kbserve.git"
+REPO_PLUGINS="https://github.com/Cuering/kbserve-plugins.git"
+REPO_SANDBOX="https://github.com/Cuering/kbserve-sandbox.git"
 INSTALL_DIR="${1:-/opt/kbserve}"
 KBSERVE_PORT="${2:-3090}"
 KBSERVE_USER="kbserve"
 KBSERVE_GROUP="kbserve"
+PRIME_PLUGINS="${3:-telegram-bot,web-search,rate-limiter}"
 
 echo "==> kbserve installer — target: $INSTALL_DIR, port: $KBSERVE_PORT"
 
@@ -53,6 +56,26 @@ cd "$INSTALL_DIR"
 # ── 4. Install dependencies ─────────────────────────────────────────────────
 echo "==> Installing dependencies"
 sudo -u "$KBSERVE_USER" "$BUN_PATH" install --production
+
+# ── 4b. Prime plugins (kbserve-plugins) ────────────────────────────────────
+echo "==> Priming plugins from kbserve-plugins"
+PKG_DIR="$INSTALL_DIR/plugins-src"
+if [ -d "$PKG_DIR/.git" ]; then
+    sudo git -C "$PKG_DIR" pull --ff-only || echo "    (plugins already present, pull skipped)"
+else
+    sudo git clone --depth 1 "$REPO_PLUGINS" "$PKG_DIR" || echo "    WARNING: cannot clone plugins — Marketplace tab can install them later"
+fi
+if [ -d "$PKG_DIR" ]; then
+    sudo mkdir -p /var/lib/kbserve/plugins
+    IFS=',' read -ra PLUG <<< "$PRIME_PLUGINS"
+    for name in "${PLUG[@]}"; do
+        if [ -d "$PKG_DIR/$name" ]; then
+            sudo cp -r "$PKG_DIR/$name" "/var/lib/kbserve/plugins/"
+            echo "    plugin: $name"
+        fi
+    done
+    sudo chown -R "$KBSERVE_USER:$KBSERVE_GROUP" /var/lib/kbserve/plugins
+fi
 
 # ── 5. Create environment file ──────────────────────────────────────────────
 if [ ! -f "$INSTALL_DIR/.env" ]; then

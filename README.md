@@ -2,6 +2,22 @@
 
 知识库 + 客服系统，基于 selfforge 核心检索引擎构建。
 
+## 仓库容器
+
+通过 `D:\opencode\kbserve\` 收纳三个独立 GitHub 仓库（各自的 `.git` 与 remote 保留）：
+
+```
+kbserve/
+├── kbserve/           主项目（remote: Cuering/kbserve）
+├── kbserve-plugins/   插件仓库，Marketplace 索引来源（remote: Cuering/kbserve-plugins）
+└── kbserve-sandbox/   沙箱副本，独立实例（remote: Cuering/kbserve-sandbox）
+```
+
+| 实例 | 端口 | 数据目录 | 用途 |
+|------|------|----------|------|
+| 主服务 | `3090` | `~/.kbserve`（`EVOLVE_HOME`） | 正式知识库客服 |
+| 沙箱 | `3099` | `~/.kbserve` | 实验/隔离副本 |
+
 ## 架构
 
 ```
@@ -97,14 +113,37 @@ docker compose down
 
 推荐用于生产环境。脚本和配置在 `docs/deployment/` 目录下。
 
-#### 一键安装
+#### 一键安装（GitHub）
+
+从 GitHub 一键安装全部功能（主服务 + 插件 + 沙箱）：
+
+**Windows（PowerShell）：**
+
+```powershell
+# 下载并运行一键脚本
+Invoke-RestMethod https://raw.githubusercontent.com/Cuering/kbserve/main/docs/deployment/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+脚本自动完成：检查/安装 bun → 克隆三个仓库（主服务 + 插件 + 沙箱）→ 安装依赖 → 预装插件（telegram-bot / web-search / rate-limiter）→ 写 `.env` → 注册登录自启任务（主 `kbserve-main-3090`、沙箱 `kbserve-sandbox-3099`）→ 打开 dashboard。
+
+**Linux：**
 
 ```bash
-# 先修改 install.sh 中的 REPO_URL 为你的仓库地址
+# install.sh 已内置 Cuering/kbserve 仓库地址，直接运行
 bash docs/deployment/install.sh
 ```
 
-脚本会自动完成：创建用户 → 安装 bun → 克隆项目 → 安装依赖 → 配置 systemd 服务 → 配置 nginx。
+脚本自动完成：创建用户 → 安装 bun → 克隆主项目与插件仓库 → 安装依赖 → 预装插件 → 配置 systemd 服务 → 配置 nginx。
+
+端口分层：
+
+| 实例 | 端口 | 数据目录 | 说明 |
+|------|------|----------|------|
+| 主服务 | `3090` | `~/.kbserve` | 正式知识库客服 |
+| 沙箱 | `3099` | `~/.kbserve` | 隔离实验副本 |
+
+插件机制：插件仓库（`Cuering/kbserve-plugins`）是 Marketplace 索引来源，也可通过 dashboard 的 Plugins / Marketplace 标签页自装；本地不要求放置插件副本。
 
 #### 手动安装
 
