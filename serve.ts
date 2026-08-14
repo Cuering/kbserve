@@ -29,6 +29,7 @@ import { generateApiDocHtml } from "./lib/api-docs"
 import { broadcast, sseHandler } from "./lib/websocket"
 import { handleMcpRequest, isMcpRequest } from "./lib/mcp"
 import { sandboxRun, logSandboxRun, ensureSandboxTables } from "./lib/sandbox"
+import { detectConflicts, conflictStats } from "./lib/conflict"
 
 const PORT = Number(process.env.KBSERVE_PORT || 3090)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -239,6 +240,9 @@ const server = createServer(async (req, res) => {
         // Import
         case "import": result = batchImport(body.path, body.tags); break
         case "import/dir": result = { path: ensureImportDir() }; break
+        // Conflict detection
+        case "conflicts/detect": result = { conflicts: detectConflicts(Number(body.threshold) || 0.8), stats: conflictStats() }; break
+        case "conflicts/stats": result = conflictStats(); break
         // Users
         case "users/list": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = listUsers(); break
         case "users/create": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = createUser(body.username, body.password, body.role || "editor", body.displayName || ""); break
