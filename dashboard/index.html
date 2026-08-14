@@ -99,7 +99,7 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;padding:1
 </main>
 <script>
 const BASE = "";
-let __lang = "zh", activeMainTab = "chat", adminTab = "dashboard", adminToken = "", adminUser = null;
+let __lang = "zh", activeMainTab = "chat", adminTab = "dashboard", adminToken = "", adminUser = null, adminTenant = "default";
 
 try { adminToken = localStorage.getItem("kbserve_admin_token") || "" } catch {}
 
@@ -171,8 +171,8 @@ function toggleTheme(){const d=document.documentElement;const t=d.getAttribute("
 (function(){try{const t=localStorage.getItem("kbserve_theme")||"light";document.documentElement.setAttribute("data-theme",t);document.getElementById("themeBtn").textContent=_l(t==="light"?"日间":"夜间",t==="light"?"Light":"Dark")}catch{}})()
 
 // API helpers
-async function get(p){return(await fetch(BASE+p)).json()}
-async function post(p,b){return(await fetch(BASE+p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b||{})})).json()}
+async function get(p){const headers={};if(adminToken)headers["Authorization"]="Bearer "+adminToken;if(adminTenant&&adminTenant!=="default")headers["X-Tenant"]=adminTenant;return(await fetch(BASE+p,{headers})).json()}
+async function post(p,b){const headers={"Content-Type":"application/json"};if(adminToken)headers["Authorization"]="Bearer "+adminToken;if(adminTenant&&adminTenant!=="default")headers["X-Tenant"]=adminTenant;return(await fetch(BASE+p,{method:"POST",headers,body:JSON.stringify(b||{})})).json()}
 function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
 // Switch main
@@ -219,7 +219,7 @@ async function rate(v,btn){
 }
 
 // === Admin ===
-const TABS={dashboard:"概览|Dashboard",kb:"知识库|KB",conflicts:"冲突检测|Conflicts",import:"导入|Import",qa:"QA审核|QA Review",feedback:"反馈|Feedback",users:"用户|Users",sandbox:"沙箱|Sandbox",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports",docs:"API文档|API Docs"};
+const TABS={dashboard:"概览|Dashboard",tenants:"租户|Tenants",kb:"知识库|KB",conflicts:"冲突检测|Conflicts",import:"导入|Import",qa:"QA审核|QA Review",feedback:"反馈|Feedback",users:"用户|Users",sandbox:"沙箱|Sandbox",persona:"人设|Persona",provider:"模型|Provider",platform:"平台|Platform",plugins:"插件|Plugins",marketplace:"市场|Marketplace",export:"导出|Export",reports:"报告|Reports",docs:"API文档|API Docs"};
 function switchAdmin(t){
   adminTab=t;renderAdmin();
   document.querySelectorAll("#adminNav button").forEach(b=>b.classList.remove("active"));
@@ -228,9 +228,14 @@ function switchAdmin(t){
 async function renderAdmin(){
   if(!await checkAuth()){document.getElementById("adminContent").innerHTML=`<div class=card><h3>${_l("需要认证","Auth Required")}</h3><div class=panel-body><p>${_l("请输入管理员令牌访问管理后台。","Enter admin token to access the management panel.")}</p><button class="btn btn-p" onclick="renderAdmin()">${_l("重试","Retry")}</button></div></div>`;return}
   const nav=document.getElementById("adminNav"),box=document.getElementById("adminContent");
-  nav.innerHTML=Object.entries(TABS).map(([k,v])=>`<button data-tab="${k}" onclick="switchAdmin('${k}')" style="background:${adminTab===k?'var(--acc)':'transparent'};color:${adminTab===k?'var(--on-acc)':'var(--dim)'};border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap">${__lang==="zh"?v.split("|")[0]:v.split("|")[1]}</button>`).join("");
+  const tabEntries = (adminUser?.role==="admin" ? Object.entries(TABS) : Object.entries(TABS).filter(([k])=>k!=="tenants"));
+  nav.innerHTML=tabEntries.map(([k,v])=>`<button data-tab="${k}" onclick="switchAdmin('${k}')" style="background:${adminTab===k?'var(--acc)':'transparent'};color:${adminTab===k?'var(--on-acc)':'var(--dim)'};border:1px solid var(--line);padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap">${__lang==="zh"?v.split("|")[0]:v.split("|")[1]}</button>`).join("");
+  if(adminUser?.role==="admin"&&adminTab!=="tenants"){
+    nav.insertAdjacentHTML("beforeend",`<select id="tenantSel" style="min-width:150px;margin-left:auto;padding:5px 8px;font-size:12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg)"><option>${_l("加载租户…","Loading tenants…")}</option></select>`);
+  }
   switch(adminTab){
     case"dashboard":renderDash(box);break;
+    case"tenants":renderTenants(box);break;
     case"kb":renderKb(box);break;
     case"conflicts":renderConflicts(box);break;
     case"import":renderImport(box);break;
@@ -247,6 +252,66 @@ async function renderAdmin(){
     case"docs":renderDocs(box);break;
     case"reports":renderReports(box);break;
   }
+  loadTenantOptions();
+}
+async function loadTenantOptions(){
+  if(adminUser?.role!=="admin"||adminTab==="tenants")return;
+  const sel=document.getElementById("tenantSel");
+  if(!sel)return;
+  const r=await get("/admin/tenants/list");
+  const tenants=r.tenants||[];
+  const cur=(adminTenant&&tenants.some(t=>t.slug===adminTenant))?adminTenant:"default";
+  adminTenant=cur;
+  sel.innerHTML=tenants.map(t=>`<option value="${esc(t.slug)}"${t.slug===cur?" selected":""}>${esc(t.name)} (${esc(t.slug)})</option>`).join("")
+    +`<option value="default"${cur==="default"?" selected":""}>${_l("默认","default")}</option>`;
+  sel.onchange=()=>{adminTenant=sel.value;renderAdmin()};
+}
+async function renderTenants(box){
+  const r=await get("/admin/tenants/list");
+  const tenants=r.tenants||[];
+  if(r.error){box.innerHTML=`<div class=card><div class=empty>${_l("无权限","Forbidden")}: ${esc(r.error)}</div></div>`;return}
+  let h=`<div class=card><h3>${_l("租户管理","Tenant Management")}</h3>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">${_l("各租户的知识库、问答、会话、反馈与用户画像完全隔离，通过 X-Tenant 请求头（或 ?tenant= 参数）区分，缺省归属 default 租户。","Each tenant's KB, QA, conversations, feedback and user profiles are fully isolated via the X-Tenant header (or ?tenant= param); missing tags fall back to the default tenant.")}</p>
+    <p style="font-size:12px;color:var(--dim);margin-bottom:8px">${_l("当前管理面板使用的租户：","Admin panel current tenant:")} <code>${esc(adminTenant||"default")}</code></p>
+    <form onsubmit="return createTenant(event)" style="margin-bottom:12px">
+      <div class=form-row>
+        <input id="ntName" placeholder="${_l("租户名称","Tenant name")}" required>
+        <input id="ntSlug" placeholder="${_l("Slug（留空自动生成）","Slug (auto if empty)")}">
+        <button class="btn btn-p">${_l("创建租户","Create")}</button>
+      </div>
+    </form>
+    <div class=table-wrap><table><tr><th>ID</th><th>${_l("名称","Name")}</th><th>Slug</th><th>${_l("状态","Status")}</th><th>${_l("创建时间","Created")}</th><th>${_l("操作","Actions")}</th></tr>`;
+  if(tenants.length)for(const t of tenants){
+    h+=`<tr><td>#${t.id}</td><td>${esc(t.name)}</td><td><code>${esc(t.slug)}</code></td>
+      <td><span class="tag ${t.status==="active"?"tag-active":"tag-archived"}">${t.status==="active"?_l("启用","Active"):_l("禁用","Disabled")}</span></td>
+      <td>${(t.created_at||"").slice(0,10)}</td>
+      <td>
+        <button class="btn btn-sm" onclick="toggleTenant(${t.id},'${t.status}')">${t.status==="active"?_l("禁用","Disable"):_l("启用","Enable")}</button>
+        ${t.slug==="default"?"":`<button class="btn btn-sm btn-d" onclick="deleteTenant(${t.id})">${_l("删除","Delete")}</button>`}
+      </td></tr>`;
+  }
+  h+=`</table></div></div>`;
+  box.innerHTML=h;
+}
+async function createTenant(e){
+  e.preventDefault();
+  const r=await post("/admin/tenants/create",{name:document.getElementById("ntName").value,slug:document.getElementById("ntSlug")?.value||undefined});
+  alert(r.error||_l("已创建","Created"));
+  renderAdmin();
+}
+async function updateTenant(id,fields){
+  const r=await post("/admin/tenants/update",{id,fields});
+  if(r.error)alert(r.error);
+  renderAdmin();
+}
+async function toggleTenant(id,status){
+  await updateTenant(id,{status:status==="active"?"disabled":"active"});
+}
+async function deleteTenant(id){
+  if(!confirm(_l("确定删除该租户？（default 租户受保护，数据仍保留在各行的 tenant_id 下）","Delete this tenant? (the default tenant is protected; rows stay under their stored tenant_id)")))return;
+  const r=await post("/admin/tenants/delete",{id});
+  alert(r.error||_l("已删除","Deleted"));
+  renderAdmin();
 }
 async function renderDash(box){
   const s=await get("/admin/stats");

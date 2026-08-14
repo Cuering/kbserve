@@ -127,8 +127,9 @@ CREATE TABLE IF NOT EXISTS user_profile (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   uuid TEXT UNIQUE,
   origin TEXT,
-  keyword TEXT UNIQUE,
+  keyword TEXT NOT NULL,
   content TEXT NOT NULL,
+  tenant_id TEXT DEFAULT 'default',
   created_at TEXT,
   updated_at TEXT,
   deleted INTEGER DEFAULT 0
@@ -336,29 +337,38 @@ export function initDb(): Database {
     } catch {}
   }
   migrate(db)
+  // Per-tenant unique index on user profiles; created after migrate() because
+  // legacy DBs need the table recreated (tenant_id added) before the index exists.
+  try {
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profile_keyword_tenant ON user_profile (keyword, tenant_id)")
+  } catch {}
   // kbserve tables
   db.exec(`
     CREATE TABLE IF NOT EXISTS kb_documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE, title TEXT NOT NULL,
       content TEXT NOT NULL, tags TEXT DEFAULT '', status TEXT DEFAULT 'active',
       version INTEGER DEFAULT 1, source TEXT DEFAULT 'manual',
+      tenant_id TEXT DEFAULT 'default',
       created_at TEXT, updated_at TEXT, deleted INTEGER DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_kb_tags ON kb_documents (status, deleted);
     CREATE TABLE IF NOT EXISTS kb_versions (
       id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id INTEGER NOT NULL,
-      title TEXT, content TEXT, version INTEGER, created_at TEXT
+      title TEXT, content TEXT, version INTEGER,
+      tenant_id TEXT DEFAULT 'default', created_at TEXT
     );
     CREATE TABLE IF NOT EXISTS qa_pairs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE,
       question TEXT NOT NULL, answer TEXT NOT NULL, source TEXT,
       doc_id INTEGER, status TEXT DEFAULT 'pending',
+      tenant_id TEXT DEFAULT 'default',
       created_at TEXT, updated_at TEXT, deleted INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS conversations (
       id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT UNIQUE,
       user_id TEXT NOT NULL, user_name TEXT DEFAULT '',
       title TEXT DEFAULT '', message_count INTEGER DEFAULT 0,
+      tenant_id TEXT DEFAULT 'default',
       created_at TEXT, updated_at TEXT, deleted INTEGER DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations (user_id, deleted);
@@ -367,6 +377,7 @@ export function initDb(): Database {
       question TEXT NOT NULL, answer TEXT NOT NULL,
       rating INTEGER DEFAULT 0, comment TEXT DEFAULT '',
       user_id TEXT, conversation_id INTEGER, reviewed INTEGER DEFAULT 0,
+      tenant_id TEXT DEFAULT 'default',
       created_at TEXT, updated_at TEXT, deleted INTEGER DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS kb_reports (
@@ -448,6 +459,50 @@ function migrate(d: Database) {
   // v1.8 recall feedback loop: per-word positive/negative evidence.
   const evCols = tableCols("recall_evidence")
   if (!evCols.has("negatives")) d.exec("ALTER TABLE recall_evidence ADD COLUMN negatives INTEGER DEFAULT 0")
+  // Multi-tenant: additive tenant_id column on kbserve data tables. Backward
+  // compatible — existing rows default to the 'default' tenant. Idempotent; on
+  // fresh DBs the CREATE TABLE statements already include the column.
+  const tenantTables = ["kb_documents", "kb_versions", "qa_pairs", "conversations", "kb_feedback", "user_profile"]
+  for (const t of tenantTables) {
+    const tc = tableCols(t)
+    if (!tc.has("tenant_id")) {
+      try {
+        d.exec(`ALTER TABLE ${t} ADD COLUMN tenant_id TEXT DEFAULT 'default'`)
+        d.exec(`CREATE INDEX IF NOT EXISTS idx_${t}_tenant ON ${t} (tenant_id, deleted)`)
+      } catch {}
+    }
+  }
+  // user_profile originally had a global UNIQUE on keyword, which breaks
+  // multi-tenant isolation (same profile keyword in two tenants collides).
+  // Recreate the table with a per-tenant unique index (keyword, tenant_id).
+  const upTable = d.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'user_profile'").get() as { sql?: string } | undefined
+  if (upTable && /\bkeyword\s+TEXT\s+UNIQUE\b/i.test(upTable.sql || "")) {
+    try {
+      d.exec("ALTER TABLE user_profile RENAME TO user_profile_old")
+      d.exec(`
+        CREATE TABLE user_profile (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          uuid TEXT UNIQUE,
+          origin TEXT,
+          keyword TEXT NOT NULL,
+          content TEXT NOT NULL,
+          tenant_id TEXT DEFAULT 'default',
+          created_at TEXT,
+          updated_at TEXT,
+          deleted INTEGER DEFAULT 0
+        )
+      `)
+      d.exec("INSERT INTO user_profile (id, uuid, origin, keyword, content, tenant_id, created_at, updated_at, deleted) SELECT id, uuid, origin, keyword, content, tenant_id, created_at, updated_at, deleted FROM user_profile_old")
+      d.exec("DROP TABLE user_profile_old")
+    } catch (err) {
+      // Migration aborted midway (e.g. lock) — leave the old table intact and
+      // let the CREATE UNIQUE INDEX below be skipped on retry by the guard.
+      try { d.exec("ALTER TABLE user_profile_old RENAME TO user_profile") } catch {}
+    }
+  }
+  try {
+    d.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profile_keyword_tenant ON user_profile (keyword, tenant_id)")
+  } catch {}
 }
 
 export function getDb(): Database {

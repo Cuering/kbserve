@@ -9,6 +9,7 @@
 import { getDb, stamp } from "./db"
 import { kbSearch } from "./knowledge"
 import { qaAsk } from "./qa"
+import { DEFAULT_TENANT } from "./tenant"
 
 export type PlatformMessage = {
   platform: string
@@ -117,8 +118,8 @@ const telegramAdapter: PlatformAdapter = {
 }
 
 // --- Process a platform message through Q&A ---
-export async function processPlatformMessage(msg: PlatformMessage): Promise<PlatformReply> {
-  const result = await qaAsk(msg.content, msg.userId, 5)
+export async function processPlatformMessage(msg: PlatformMessage, tenantId = DEFAULT_TENANT): Promise<PlatformReply> {
+  const result = await qaAsk(msg.content, msg.userId, 5, tenantId)
   const content = result.answer || result.error || "抱歉，无法回答这个问题。"
   return { content, platform: msg.platform, userId: msg.userId }
 }

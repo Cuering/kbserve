@@ -4,6 +4,7 @@
  */
 import { getDb } from "./db"
 import { generateUserReport, generateAllUsersReport } from "./report"
+import { DEFAULT_TENANT } from "./tenant"
 
 function htmlReport(title: string, body: string, css?: string): string {
   return `<!DOCTYPE html>
@@ -29,13 +30,13 @@ function escHtml(s: string): string {
   return String(s || "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]))
 }
 
-export function exportReportHtml(type: "user" | "all", userId?: string): string {
+export function exportReportHtml(type: "user" | "all", userId?: string, tenantId = DEFAULT_TENANT): string {
   const db = getDb()
 
   if (type === "user" && userId) {
-    const report = generateUserReport(userId)
-    const convs = db.query("SELECT * FROM conversations WHERE user_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 10").all(userId) as any[]
-    const feedback = db.query("SELECT * FROM kb_feedback WHERE user_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 20").all(userId) as any[]
+    const report = generateUserReport(userId, tenantId)
+    const convs = db.query("SELECT * FROM conversations WHERE user_id = ? AND tenant_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 10").all(userId, tenantId) as any[]
+    const feedback = db.query("SELECT * FROM kb_feedback WHERE user_id = ? AND tenant_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 20").all(userId, tenantId) as any[]
     const body = `
       <h1>用户分析报告</h1>
       <p>用户: ${escHtml(userId)} | 生成时间: ${new Date().toISOString()}</p>
@@ -58,28 +59,28 @@ export function exportReportHtml(type: "user" | "all", userId?: string): string 
   }
 
   // All users report
-  const users = db.query("SELECT DISTINCT user_id FROM conversations WHERE deleted = 0").all() as any[]
+  const users = db.query("SELECT DISTINCT user_id FROM conversations WHERE tenant_id = ? AND deleted = 0").all(tenantId) as any[]
   const body = `
     <h1>用户分析汇总报告</h1>
     <p>生成时间: ${new Date().toISOString()}</p>
     <div class=stats>
       <div class=stat-card><b>${users.length}</b><span>用户数</span></div>
-      <div class=stat-card><b>${(db.query("SELECT COUNT(*) AS n FROM conversations WHERE deleted = 0").get() as any).n}</b><span>总会话</span></div>
-      <div class=stat-card><b>${(db.query("SELECT COUNT(*) AS n FROM kb_feedback WHERE deleted = 0").get() as any).n}</b><span>总反馈</span></div>
+      <div class=stat-card><b>${(db.query("SELECT COUNT(*) AS n FROM conversations WHERE tenant_id = ? AND deleted = 0").get(tenantId) as any).n}</b><span>总会话</span></div>
+      <div class=stat-card><b>${(db.query("SELECT COUNT(*) AS n FROM kb_feedback WHERE tenant_id = ? AND deleted = 0").get(tenantId) as any).n}</b><span>总反馈</span></div>
     </div>
     <h2>用户明细</h2>
     <table><tr><th>用户</th><th>会话</th><th>反馈</th><th>平均评分</th></tr>
     ${users.map(u => {
-      const convs = (db.query("SELECT COUNT(*) AS n FROM conversations WHERE user_id = ? AND deleted = 0").get(u.user_id) as any).n
-      const fb = db.query("SELECT COUNT(*) AS n, AVG(rating) AS avg FROM kb_feedback WHERE user_id = ? AND deleted = 0 AND rating > 0").get(u.user_id) as any
+      const convs = (db.query("SELECT COUNT(*) AS n FROM conversations WHERE user_id = ? AND tenant_id = ? AND deleted = 0").get(u.user_id, tenantId) as any).n
+      const fb = db.query("SELECT COUNT(*) AS n, AVG(rating) AS avg FROM kb_feedback WHERE user_id = ? AND tenant_id = ? AND deleted = 0 AND rating > 0").get(u.user_id, tenantId) as any
       return `<tr><td>${escHtml(u.user_id)}</td><td>${convs}</td><td>${fb.n}</td><td>${(fb.avg || 0).toFixed(1)}</td></tr>`
     }).join("")}
     </table>`
   return htmlReport("用户汇总报告", body)
 }
 
-export function exportKbHtml(): string {
-  const docs = getDb().query("SELECT * FROM kb_documents WHERE deleted = 0 ORDER BY updated_at DESC").all() as any[]
+export function exportKbHtml(tenantId = DEFAULT_TENANT): string {
+  const docs = getDb().query("SELECT * FROM kb_documents WHERE tenant_id = ? AND deleted = 0 ORDER BY updated_at DESC").all(tenantId) as any[]
   const body = `
     <h1>知识库文档清单</h1>
     <p>共计 ${docs.length} 篇文档 | 生成时间: ${new Date().toISOString()}</p>

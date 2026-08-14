@@ -6,6 +6,7 @@ import { readFileSync, existsSync } from "fs"
 import { homedir } from "os"
 import { join } from "path"
 import { kbSearch } from "./knowledge"
+import { DEFAULT_TENANT } from "./tenant"
 
 const AUTH_FILE = join(homedir(), ".local", "share", "opencode", "auth.json")
 const OPENCODE_CONFIG = join(homedir(), ".config", "opencode", "opencode.jsonc")
@@ -46,11 +47,11 @@ export type QaResult = {
  * 3. Call LLM
  * 4. Return answer + sources
  */
-export async function qaAsk(question: string, userId?: string, topK = 5): Promise<QaResult> {
+export async function qaAsk(question: string, userId?: string, topK = 5, tenantId = DEFAULT_TENANT): Promise<QaResult> {
   const provider = readProvider()
   if (!provider) return { answer: "", sources: [], ok: false, error: "No LLM provider configured. Add an API key in opencode settings." }
 
-  const kbHits = kbSearch(question, topK)
+  const kbHits = kbSearch(question, topK, tenantId)
   const context = kbHits.length
     ? kbHits.map((d, i) => `[${i + 1}] ${d.title}\n${d.content.slice(0, 800)}`).join("\n\n")
     : "暂无相关知识库文档。"

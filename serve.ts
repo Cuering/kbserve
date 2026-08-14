@@ -11,6 +11,9 @@ import { fileURLToPath } from "url"
 process.env.EVOLVE_HOME ||= join(homedir(), ".kbserve")
 const { initDb, getDb, getConfig, setConfig } = await import("./lib/db")
 initDb()
+const { ensureTenantTables, ensureTenantColumns, tenantCreate, tenantList, tenantGet, tenantUpdate, tenantDelete } = await import("./lib/tenant")
+ensureTenantTables()
+ensureTenantColumns()
 require("./lib/bench.ts")
 
 import { qaAsk } from "./lib/qa"
@@ -35,12 +38,12 @@ const PORT = Number(process.env.KBSERVE_PORT || 3090)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // --- OpenAI-compatible chat completions endpoint ---
-async function openaiChat(raw: string): Promise<any> {
+async function openaiChat(raw: string, tenantId = "default"): Promise<any> {
   const body = JSON.parse(raw)
   const messages = body.messages || []
   const model = body.model || "default"
   const userMsg = messages.filter((m: any) => m.role === "user").pop()?.content || ""
-  const result = await qaAsk(userMsg, body.user || "api", 5)
+  const result = await qaAsk(userMsg, body.user || "api", 5, tenantId)
   return {
     id: "chatcmpl-" + Date.now(),
     object: "chat.completion",
@@ -72,29 +75,37 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 // --- Stats collection ---
-function computeStats() {
+function computeStats(tenantId = "default") {
   const db = getDb()
   const r = (sql: string, ...p: any[]) => (db.query(sql).get(...p) as any)?.n ?? 0
+  const t = tenantId
   return {
-    kbCount: r("SELECT COUNT(*) AS n FROM kb_documents WHERE deleted = 0"),
-    pendingFeedback: r("SELECT COUNT(*) AS n FROM kb_feedback WHERE deleted = 0 AND reviewed = 0"),
-    pendingQa: r("SELECT COUNT(*) AS n FROM qa_pairs WHERE deleted = 0 AND status = 'pending'"),
-    conversations: r("SELECT COUNT(*) AS n FROM conversations WHERE deleted = 0"),
-    users: r("SELECT COUNT(DISTINCT user_id) AS n FROM conversations WHERE deleted = 0"),
-    todayConvs: r("SELECT COUNT(*) AS n FROM conversations WHERE deleted = 0 AND created_at >= date('now')"),
-    todayFeedback: r("SELECT COUNT(*) AS n FROM kb_feedback WHERE deleted = 0 AND created_at >= date('now')"),
-    avgRating: (db.query("SELECT AVG(rating) AS a FROM kb_feedback WHERE deleted = 0 AND rating > 0").get() as any)?.a ?? 0,
+    kbCount: r("SELECT COUNT(*) AS n FROM kb_documents WHERE deleted = 0 AND tenant_id = ?", t),
+    pendingFeedback: r("SELECT COUNT(*) AS n FROM kb_feedback WHERE deleted = 0 AND reviewed = 0 AND tenant_id = ?", t),
+    pendingQa: r("SELECT COUNT(*) AS n FROM qa_pairs WHERE deleted = 0 AND status = 'pending' AND tenant_id = ?", t),
+    conversations: r("SELECT COUNT(*) AS n FROM conversations WHERE deleted = 0 AND tenant_id = ?", t),
+    users: r("SELECT COUNT(DISTINCT user_id) AS n FROM conversations WHERE deleted = 0 AND tenant_id = ?", t),
+    todayConvs: r("SELECT COUNT(*) AS n FROM conversations WHERE deleted = 0 AND created_at >= date('now') AND tenant_id = ?", t),
+    todayFeedback: r("SELECT COUNT(*) AS n FROM kb_feedback WHERE deleted = 0 AND created_at >= date('now') AND tenant_id = ?", t),
+    avgRating: (db.query("SELECT AVG(rating) AS a FROM kb_feedback WHERE deleted = 0 AND rating > 0 AND tenant_id = ?").get(t) as any)?.a ?? 0,
   }
 }
 
 const server = createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*")
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Tenant")
   if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return }
 
   const url = (req.url || "/").split("?")[0]
   const method = req.method || "GET"
+
+  // Resolve the tenant for this request: X-Tenant header, then ?tenant= query, else "default".
+  const tenantId = (() => {
+    const h = req.headers["x-tenant"]
+    if (typeof h === "string" && h.trim()) return h.trim()
+    return new URL(req.url || "/", "http://x").searchParams.get("tenant") || "default"
+  })()
 
   // Health
   if (url === "/health") { json(res, { ok: true, pid: process.pid, plugins: getPlugins().length }); return }
@@ -103,7 +114,7 @@ const server = createServer(async (req, res) => {
   if (url === "/v1/chat/completions" && method === "POST") {
     try {
       recordCall("api", "openai.chat", "completions")
-      json(res, await openaiChat(await readBody(req)))
+      json(res, await openaiChat(await readBody(req), tenantId))
     } catch (e) { json(res, { error: { message: (e as Error).message } }, 400) }
     return
   }
@@ -112,7 +123,7 @@ const server = createServer(async (req, res) => {
   if (url === "/qa" && method === "POST") {
     try {
       const body = JSON.parse(await readBody(req))
-      json(res, await qaAsk(body.question, body.userId, body.topK || 5))
+      json(res, await qaAsk(body.question, body.userId, body.topK || 5, tenantId))
       recordCall("qa", "qa.ask", body.question?.slice(0, 100))
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
     return
@@ -121,7 +132,7 @@ const server = createServer(async (req, res) => {
   if (url === "/qa/feedback" && method === "POST") {
     try {
       const body = JSON.parse(await readBody(req))
-      const fb = feedbackAdd(body.question, body.answer, body.rating || 0, body.comment || "", body.userId, body.conversationId)
+      const fb = feedbackAdd(body.question, body.answer, body.rating || 0, body.comment || "", body.userId, body.conversationId, tenantId)
       if (body.rating && body.rating <= 2) {
         broadcast({ type: "feedback", title: "新差评反馈", message: `评分 ${body.rating}/5: ${(body.question || "").slice(0, 60)}`, timestamp: "", meta: { question: body.question, rating: body.rating } })
       }
@@ -133,7 +144,7 @@ const server = createServer(async (req, res) => {
   // Public KB search
   if (url === "/kb/search" && method === "GET") {
     const q = new URL(req.url || "/", "http://x").searchParams.get("q") || ""
-    json(res, kbSearch(q))
+    json(res, kbSearch(q, 20, tenantId))
     return
   }
 
@@ -141,18 +152,18 @@ const server = createServer(async (req, res) => {
   if (url === "/conv/start" && method === "POST") {
     try {
       const body = JSON.parse(await readBody(req))
-      json(res, convStart(body.userId || "anonymous", body.userName || "", body.title || ""))
+      json(res, convStart(body.userId || "anonymous", body.userName || "", body.title || "", tenantId))
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
     return
   }
   if (url === "/conv/list" && method === "GET") {
     const userId = new URL(req.url || "/", "http://x").searchParams.get("userId") || undefined
-    json(res, convList(userId))
+    json(res, convList(userId, 20, tenantId))
     return
   }
 
   // Stats
-  if (url === "/api/stats") { json(res, computeStats()); return }
+  if (url === "/api/stats") { json(res, computeStats(tenantId)); return }
   if (url === "/api/calls") { json(res, getCallStats()); return }
 
   // Auth check
@@ -195,19 +206,31 @@ const server = createServer(async (req, res) => {
       const q = new URL(req.url || "/", "http://x").searchParams
       let result: any = { error: "unknown action" }
       switch (action) {
-        case "kb/list": result = kbList(); break
-        case "kb/add": result = kbAdd(body.title, body.content, body.tags || ""); recordCall("kb", "kb.add", body.title); break
-        case "kb/update": result = kbUpdate(body.id, body.title, body.content, body.tags); break
-        case "kb/delete": result = { ok: kbDelete(body.id) }; break
-        case "kb/versions": result = kbGetVersions(Number(q.get("id") || body.id)); break
-        case "qa/list": result = kbListQa(q.get("status") || undefined); break
-        case "qa/approve": result = { ok: kbApproveQa(body.id) }; break
-        case "qa/reject": result = { ok: kbRejectQa(body.id) }; break
-        case "feedback": result = feedbackList(q.get("unreviewed") !== "false"); break
-        case "feedback/review": result = { ok: feedbackMarkReviewed(body.id) }; break
-        case "report/user": result = { report: generateUserReport(q.get("userId") || "") }; break
-        case "report/all": result = { report: generateAllUsersReport() }; break
-        case "stats": result = computeStats(); break
+        // Tenants (admin role only)
+        case "tenants/list": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = { tenants: tenantList() }; break
+        case "tenants/create": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = tenantCreate(body.name, body.slug, body.config || {}); break
+        case "tenants/update": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = tenantUpdate(Number(body.id), body.fields || {}); break
+        case "tenants/delete": {
+          if (user.role !== "admin") { result = { error: "forbidden" }; break }
+          const t = tenantGet(Number(body.id))
+          result = t && t.slug === "default"
+            ? { error: "default tenant cannot be deleted" }
+            : { ok: tenantDelete(Number(body.id)) }
+          break
+        }
+        case "kb/list": result = kbList(undefined, 50, tenantId); break
+        case "kb/add": result = kbAdd(body.title, body.content, body.tags || "", "manual", tenantId); recordCall("kb", "kb.add", body.title); break
+        case "kb/update": result = kbUpdate(body.id, body.title, body.content, body.tags, tenantId); break
+        case "kb/delete": result = { ok: kbDelete(body.id, tenantId) }; break
+        case "kb/versions": result = kbGetVersions(Number(q.get("id") || body.id), tenantId); break
+        case "qa/list": result = kbListQa(q.get("status") || undefined, 50, tenantId); break
+        case "qa/approve": result = { ok: kbApproveQa(body.id, tenantId) }; break
+        case "qa/reject": result = { ok: kbRejectQa(body.id, tenantId) }; break
+        case "feedback": result = feedbackList(q.get("unreviewed") !== "false", 50, tenantId); break
+        case "feedback/review": result = { ok: feedbackMarkReviewed(body.id, tenantId) }; break
+        case "report/user": result = { report: generateUserReport(q.get("userId") || "", tenantId) }; break
+        case "report/all": result = { report: generateAllUsersReport(tenantId) }; break
+        case "stats": result = computeStats(tenantId); break
         case "calls": result = getCallStats(); break
         // Persona
         case "persona/get": result = { name: getConfig("persona_name") || "kbserve", greeting: getConfig("persona_greeting") || "您好！我是知识库客服助手，请问有什么可以帮助您的？", about: getConfig("persona_about") || "基于知识库的智能客服系统" }; break
@@ -235,14 +258,14 @@ const server = createServer(async (req, res) => {
         case "marketplace/install": result = await installPlugin(body.repo, body.name); break
         case "marketplace/uninstall": result = uninstallPlugin(body.name); break
         // Export
-        case "export/report": result = { html: exportReportHtml(body.type || "all", body.userId) }; break
-        case "export/kb": result = { html: exportKbHtml() }; break
+        case "export/report": result = { html: exportReportHtml(body.type || "all", body.userId, tenantId) }; break
+        case "export/kb": result = { html: exportKbHtml(tenantId) }; break
         // Import
-        case "import": result = batchImport(body.path, body.tags); break
+        case "import": result = batchImport(body.path, body.tags, tenantId); break
         case "import/dir": result = { path: ensureImportDir() }; break
         // Conflict detection
-        case "conflicts/detect": result = { conflicts: detectConflicts(Number(body.threshold) || 0.8), stats: conflictStats() }; break
-        case "conflicts/stats": result = conflictStats(); break
+        case "conflicts/detect": result = { conflicts: detectConflicts(Number(body.threshold) || 0.8, tenantId), stats: conflictStats(tenantId) }; break
+        case "conflicts/stats": result = conflictStats(tenantId); break
         // Users
         case "users/list": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = listUsers(); break
         case "users/create": if (user.role !== "admin") { result = { error: "forbidden" }; break } result = createUser(body.username, body.password, body.role || "editor", body.displayName || ""); break
@@ -268,7 +291,7 @@ const server = createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req))
       const msg = require("./lib/platform").getAdapter("webhook")?.parseIncoming(req, body)
       if (msg) {
-        const reply = await processPlatformMessage(msg)
+        const reply = await processPlatformMessage(msg, tenantId)
         json(res, { reply: reply.content })
       } else json(res, { error: "unparseable" }, 400)
     } catch (e) { json(res, { error: (e as Error).message }, 400) }
@@ -289,7 +312,7 @@ const server = createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req))
       const msg = require("./lib/platform").getAdapter("wechat")?.parseIncoming(req, body)
       if (msg) {
-        const reply = await processPlatformMessage(msg)
+        const reply = await processPlatformMessage(msg, tenantId)
         // Reply as WeChat XML
         const xml = `<xml><ToUserName><![CDATA[${msg.conversationId?.replace("wx-","")||""}]]></ToUserName><FromUserName><![CDATA[kbserve]]></FromUserName><CreateTime>${Math.floor(Date.now()/1000)}</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[${reply.content}]]></Content></xml>`
         res.writeHead(200, { "Content-Type": "application/xml; charset=utf-8" })
@@ -310,7 +333,7 @@ const server = createServer(async (req, res) => {
         return
       }
       const msg = require("./lib/platform").getAdapter("feishu")?.parseIncoming(req, body)
-      if (msg) { await processPlatformMessage(msg) }
+      if (msg) { await processPlatformMessage(msg, tenantId) }
       res.writeHead(200); res.end("{}")
     } catch (e) { res.writeHead(200); res.end("{}") }
     return
@@ -321,7 +344,7 @@ const server = createServer(async (req, res) => {
     try {
       const body = JSON.parse(await readBody(req))
       const msg = require("./lib/platform").getAdapter("dingtalk")?.parseIncoming(req, body)
-      if (msg) { await processPlatformMessage(msg) }
+      if (msg) { await processPlatformMessage(msg, tenantId) }
       res.writeHead(200); res.end("{}")
     } catch (e) { res.writeHead(200); res.end("{}") }
     return
@@ -333,7 +356,7 @@ const server = createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req))
       const msg = require("./lib/platform").getAdapter("telegram")?.parseIncoming(req, body)
       if (msg) {
-        await processPlatformMessage(msg) // reply sent via sendReply
+        await processPlatformMessage(msg, tenantId) // reply sent via sendReply
         json(res, { ok: true })
       } else json(res, { ok: true }) // Telegram expects 200 even for non-text
     } catch (e) { json(res, { error: (e as Error).message }, 400) }

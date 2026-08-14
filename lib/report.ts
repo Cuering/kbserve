@@ -3,6 +3,7 @@
  */
 import { getDb } from "./db"
 import { userList } from "./user"
+import { DEFAULT_TENANT } from "./tenant"
 
 export type Report = {
   id: number
@@ -25,10 +26,10 @@ export function ensureReportTables(): void {
   } catch {}
 }
 
-export function generateUserReport(userId: string): string {
-  const profile = userList().filter((u: any) => u.keyword?.includes(userId) || true)
-  const conversations = getDb().query("SELECT * FROM conversations WHERE user_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 10").all(userId) as any[]
-  const feedback = getDb().query("SELECT * FROM kb_feedback WHERE user_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 20").all(userId) as any[]
+export function generateUserReport(userId: string, tenantId = DEFAULT_TENANT): string {
+  const profile = userList(tenantId)
+  const conversations = getDb().query("SELECT * FROM conversations WHERE user_id = ? AND tenant_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 10").all(userId, tenantId) as any[]
+  const feedback = getDb().query("SELECT * FROM kb_feedback WHERE user_id = ? AND tenant_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 20").all(userId, tenantId) as any[]
 
   const lines = [`# 用户分析报告 — ${userId}`, `生成时间: ${new Date().toISOString()}`]
   lines.push("")
@@ -57,13 +58,13 @@ export function generateUserReport(userId: string): string {
   return lines.join("\n")
 }
 
-export function generateAllUsersReport(): string {
-  const users = getDb().query("SELECT DISTINCT user_id FROM conversations WHERE deleted = 0").all() as any[]
+export function generateAllUsersReport(tenantId = DEFAULT_TENANT): string {
+  const users = getDb().query("SELECT DISTINCT user_id FROM conversations WHERE tenant_id = ? AND deleted = 0").all(tenantId) as any[]
   const lines = ["# 用户分析汇总报告", `生成时间: ${new Date().toISOString()}`, ""]
   lines.push(`总用户数: ${users.length}`)
   for (const u of users) {
-    const convs = getDb().query("SELECT COUNT(*) AS n FROM conversations WHERE user_id = ? AND deleted = 0").get(u.user_id) as any
-    const fb = getDb().query("SELECT COUNT(*) AS n, AVG(rating) AS avg FROM kb_feedback WHERE user_id = ? AND deleted = 0 AND rating > 0").get(u.user_id) as any
+    const convs = getDb().query("SELECT COUNT(*) AS n FROM conversations WHERE user_id = ? AND tenant_id = ? AND deleted = 0").get(u.user_id, tenantId) as any
+    const fb = getDb().query("SELECT COUNT(*) AS n, AVG(rating) AS avg FROM kb_feedback WHERE user_id = ? AND tenant_id = ? AND deleted = 0 AND rating > 0").get(u.user_id, tenantId) as any
     lines.push(`- ${u.user_id}: ${convs.n} 会话, ${fb.n} 反馈, 平均评分 ${(fb.avg || 0).toFixed(1)}`)
   }
   return lines.join("\n")

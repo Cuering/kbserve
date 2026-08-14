@@ -6,6 +6,7 @@ import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 
 import { join, extname } from "path"
 import { homedir } from "os"
 import { kbAdd } from "./knowledge"
+import { DEFAULT_TENANT } from "./tenant"
 
 const IMPORT_DIR = join(process.env.EVOLVE_HOME || join(homedir(), ".kbserve"), "imports")
 
@@ -53,33 +54,33 @@ function parsePdf(filePath: string): string {
 }
 
 /** Import a single file */
-function importFile(filePath: string, tags?: string, defaultTitle?: string): ImportResult["docs"][0] {
+function importFile(filePath: string, tags?: string, defaultTitle?: string, tenantId = DEFAULT_TENANT): ImportResult["docs"][0] {
   const ext = extname(filePath).toLowerCase()
   const name = defaultTitle || filePath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, "") || "untitled"
 
   try {
     if (ext === ".md") {
       const { title, content } = parseMarkdown(filePath)
-      kbAdd(title || name, content, tags || "markdown", "import")
+      kbAdd(title || name, content, tags || "markdown", "import", tenantId)
       return { title: title || name, status: "imported" }
     }
     if (ext === ".csv") {
       const rows = parseCsv(filePath)
       let count = 0
       for (const row of rows) {
-        kbAdd(row.title || name, row.content, tags || "csv", "import")
+        kbAdd(row.title || name, row.content, tags || "csv", "import", tenantId)
         count++
       }
       return { title: `${name} (${count} QA pairs)`, status: "imported" }
     }
     if (ext === ".txt") {
       const content = readFileSync(filePath, "utf8")
-      kbAdd(name, content, tags || "text", "import")
+      kbAdd(name, content, tags || "text", "import", tenantId)
       return { title: name, status: "imported" }
     }
     if (ext === ".pdf") {
       const content = parsePdf(filePath)
-      kbAdd(name, content, tags || "pdf", "import")
+      kbAdd(name, content, tags || "pdf", "import", tenantId)
       return { title: name, status: "imported" }
     }
     return { title: name, status: `skipped: unsupported format ${ext}` }
@@ -89,7 +90,7 @@ function importFile(filePath: string, tags?: string, defaultTitle?: string): Imp
 }
 
 /** Import a directory or single file */
-export function batchImport(path?: string, tags?: string): ImportResult {
+export function batchImport(path?: string, tags?: string, tenantId = DEFAULT_TENANT): ImportResult {
   const target = path || IMPORT_DIR
   const files: string[] = []
   const errors: string[] = []
@@ -102,7 +103,7 @@ export function batchImport(path?: string, tags?: string): ImportResult {
 
   const stat = require("fs").statSync(target)
   if (stat.isFile()) {
-    const r = importFile(target, tags)
+    const r = importFile(target, tags, undefined, tenantId)
     docs.push(r)
     if (r.status.startsWith("error") || r.status.startsWith("skipped")) errors.push(r.status)
   } else {
@@ -110,7 +111,7 @@ export function batchImport(path?: string, tags?: string): ImportResult {
       if (entry.isFile()) files.push(join(target, entry.name))
     }
     for (const f of files) {
-      const r = importFile(f, tags)
+      const r = importFile(f, tags, undefined, tenantId)
       docs.push(r)
       if (r.status.startsWith("error") || r.status.startsWith("skipped")) errors.push(r.status)
     }

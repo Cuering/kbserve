@@ -8,6 +8,7 @@
  *  - contradiction:  same topic/semantic anchor but conflicting statements
  */
 import { getDb } from "./db"
+import { DEFAULT_TENANT } from "./tenant"
 
 /**
  * Zero-dependency tokenizer: English/numbers as whole words, Chinese as
@@ -62,9 +63,9 @@ export type Conflict = {
   overlap: number
 }
 
-export function detectConflicts(threshold = 0.8): Conflict[] {
+export function detectConflicts(threshold = 0.8, tenantId = DEFAULT_TENANT): Conflict[] {
   const db = getDb()
-  const docs = db.query("SELECT id, title, content, deleted FROM kb_documents WHERE deleted = 0").all() as Array<{ id: number; title: string; content: string; deleted: number }>
+  const docs = db.query("SELECT id, title, content, deleted FROM kb_documents WHERE deleted = 0 AND tenant_id = ?").all(tenantId) as Array<{ id: number; title: string; content: string; deleted: number }>
   const conflicts: Conflict[] = []
   const seen = new Set<string>()
 
@@ -96,8 +97,8 @@ export function detectConflicts(threshold = 0.8): Conflict[] {
   return conflicts
 }
 
-export function conflictStats(): { total: number; duplicates: number; near_duplicates: number; contradictions: number } {
-  const conflicts = detectConflicts()
+export function conflictStats(tenantId = DEFAULT_TENANT): { total: number; duplicates: number; near_duplicates: number; contradictions: number } {
+  const conflicts = detectConflicts(0.8, tenantId)
   const d: any = { total: conflicts.length, duplicates: 0, near_duplicates: 0, contradictions: 0 }
   for (const c of conflicts) d[c.type + (c.type === "near_duplicate" ? "s" : "")]++
   // Normalize key names
