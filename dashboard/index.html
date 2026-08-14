@@ -74,7 +74,7 @@ pre{white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto;padding:1
   <span class="sub" id="sub">-</span>
   <div class="hdr-actions">
     <button id="themeBtn" onclick="toggleTheme()">日间</button>
-    <button onclick="switchMain('chat')">客服</button>
+    <button id="chatBtn" onclick="switchMain('chat')">客服</button>
     <button id="adminBtn" onclick="switchMain('admin')">管理</button>
   </div>
 </header>
@@ -181,8 +181,6 @@ function switchMain(tab){
   document.querySelectorAll(".pane").forEach(p=>p.classList.remove("active"));
   document.getElementById("pane-"+tab).classList.add("active");
   document.querySelectorAll("header .hdr-actions button").forEach(b=>b.classList.remove("active"));
-  document.getElementById(tab==="chat"?"adminBtn":"chatBtn").classList.remove("active");
-  document.getElementById(tab==="chat"?"chatBtn":"adminBtn").classList.remove("active");
   if(tab==="admin")renderAdmin();
   else if(tab==="chat")loadGreeting();
 }
