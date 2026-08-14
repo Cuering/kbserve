@@ -1,0 +1,49 @@
+[Unit]
+Description=kbserve — Knowledge Base + Customer Service Engine
+Documentation=https://github.com/your-org/kbserve
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=kbserve
+Group=kbserve
+
+# Working directory
+WorkingDirectory=/opt/kbserve
+
+# Executable — use bun if available, fallback to node
+# Install bun first: curl -fsSL https://bun.sh/install | bash
+ExecStart=/usr/local/bin/bun serve.ts
+# Alternative with node (requires tsx or ts-node):
+# ExecStart=/usr/bin/node --import tsx serve.ts
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Environment file — create /opt/kbserve/.env with your configuration
+EnvironmentFile=/opt/kbserve/.env
+Environment=NODE_ENV=production
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/kbserve /var/lib/kbserve
+
+# Standard logging to journald
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Timeout
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

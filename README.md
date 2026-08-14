@@ -58,3 +58,133 @@ GET  /admin/*     管理后台 API
 
 - `~/.kbserve/kbserve.db` — 全部数据（知识库、会话、反馈、用户画像）
 - 复用 opencode 的 `auth.json` 获取 LLM 提供商配置
+
+## 部署
+
+### 快速启动（开发/测试）
+
+```bash
+# 安装 bun（如未安装）
+curl -fsSL https://bun.sh/install | bash
+
+# 启动服务
+bun serve.ts
+# → http://127.0.0.1:3090
+```
+
+端口可通过 `KBSERVE_PORT` 环境变量修改：
+
+```bash
+KBSERVE_PORT=3091 bun serve.ts
+```
+
+### Docker 部署
+
+```bash
+# 构建并启动
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+```
+
+数据持久化在 `./data/` 目录，映射到容器内的 `/data`。
+
+### 生产部署（nginx + systemd）
+
+推荐用于生产环境。脚本和配置在 `docs/deployment/` 目录下。
+
+#### 一键安装
+
+```bash
+# 先修改 install.sh 中的 REPO_URL 为你的仓库地址
+bash docs/deployment/install.sh
+```
+
+脚本会自动完成：创建用户 → 安装 bun → 克隆项目 → 安装依赖 → 配置 systemd 服务 → 配置 nginx。
+
+#### 手动安装
+
+```bash
+# 1. 创建用户
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin kbserve
+
+# 2. 创建目录
+sudo mkdir -p /opt/kbserve
+sudo mkdir -p /var/lib/kbserve
+sudo chown kbserve:kbserve /opt/kbserve /var/lib/kbserve
+
+# 3. 拷贝项目
+sudo cp -r . /opt/kbserve/
+cd /opt/kbserve
+sudo -u kbserve bun install --production
+
+# 4. 创建环境文件
+sudo tee /opt/kbserve/.env > /dev/null <<EOF
+KBSERVE_PORT=3090
+EVOLVE_HOME=/var/lib/kbserve
+NODE_ENV=production
+EOF
+sudo chmod 600 /opt/kbserve/.env
+
+# 5. 安装 systemd 服务
+sudo cp docs/deployment/kbserve.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now kbserve
+
+# 6. 配置 nginx
+sudo cp docs/deployment/nginx.conf /etc/nginx/sites-available/kbserve
+sudo ln -s /etc/nginx/sites-available/kbserve /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+#### 管理服务
+
+```bash
+# 查看状态
+sudo systemctl status kbserve
+
+# 查看日志
+sudo journalctl -u kbserve -f
+
+# 重启
+sudo systemctl restart kbserve
+
+# 停止
+sudo systemctl stop kbserve
+```
+
+### HTTPS 配置
+
+详见 `docs/deployment/ssl-setup.md`，提供两种方式：
+
+- **Option A: Let's Encrypt / Certbot** — 自动获取可信证书，推荐对外服务
+- **Option B: 自签名证书** — 内网使用，无需域名
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `KBSERVE_PORT` | `3090` | 服务监听端口 |
+| `EVOLVE_HOME` | `~/.kbserve` | 数据存储目录（SQLite 数据库） |
+| `NODE_ENV` | *(none)* | 设为 `production` 开启生产模式 |
+| `TZ` | *(none)* | 时区，如 `Asia/Shanghai` |
+
+### 数据备份
+
+```bash
+# 备份整个数据目录
+tar -czf kbserve-backup-$(date +%Y%m%d).tar.gz -C ~/.kbserve .
+
+# 恢复
+tar -xzf kbserve-backup-20250101.tar.gz -C ~/.kbserve/
+```
+
+生产环境建议：
+
+- 将 `EVOLVE_HOME` 指向独立数据目录（如 `/var/lib/kbserve`）便于备份
+- 配置定时备份（crontab）：`0 3 * * * tar -czf /backups/kbserve-\$(date +\%Y\%m\%d).tar.gz -C /var/lib/kbserve .`
+- 结合文件系统快照（LVM / ZFS / btrfs）实现增量备份
